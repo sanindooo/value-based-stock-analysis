@@ -19,6 +19,7 @@ from app.schemas.screening import (
     ScreeningRunOut,
     ScreeningRunRequest,
     ScreeningRunResponse,
+    StageUpdate,
     TaskStatusOut,
 )
 from app.services.screener import run_screening
@@ -197,3 +198,39 @@ async def get_task_status(task_id: int, db: AsyncSession = Depends(get_db)):
     if task is None:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
     return TaskStatusOut.model_validate(task)
+
+
+VALID_STAGES = {"screened", "researching", "researched", "rejected"}
+
+
+@router.patch("/{run_id}/results/{result_id}/stage", response_model=ScreeningResultOut)
+async def update_result_stage(
+    run_id: int,
+    result_id: int,
+    body: StageUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update the pipeline stage of a screening result."""
+    if body.stage not in VALID_STAGES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid stage '{body.stage}'. Must be one of: {', '.join(sorted(VALID_STAGES))}",
+        )
+
+    result = await db.execute(
+        select(ScreeningResult).where(
+            ScreeningResult.id == result_id,
+            ScreeningResult.screening_run_id == run_id,
+        )
+    )
+    screening_result = result.scalar_one_or_none()
+    if screening_result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Result {result_id} not found in run {run_id}",
+        )
+
+    screening_result.stage = body.stage
+    await db.commit()
+    await db.refresh(screening_result)
+    return ScreeningResultOut.model_validate(screening_result)

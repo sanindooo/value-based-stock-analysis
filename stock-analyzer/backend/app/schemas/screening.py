@@ -53,3 +53,7 @@ class TaskStatusOut(BaseModel):
     error_message: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class StageUpdate(BaseModel):
+    stage: str
