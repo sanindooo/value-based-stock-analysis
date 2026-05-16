@@ -264,6 +264,26 @@ async def list_screening_tasks(
     return [TaskStatusOut.model_validate(t) for t in rows]
 
 
+@router.post("/tasks/{task_id}/cancel", response_model=TaskStatusOut)
+async def cancel_screening_task(task_id: int, db: AsyncSession = Depends(get_db)):
+    """Request cancellation of a running screening task."""
+    result = await db.execute(
+        select(TaskStatus).where(TaskStatus.id == task_id)
+    )
+    task = result.scalar_one_or_none()
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+    # If already completed/failed/cancelled, no-op
+    if task.status in ("completed", "failed", "cancelled"):
+        return TaskStatusOut.model_validate(task)
+
+    task.status = "cancelling"
+    await db.commit()
+    await db.refresh(task)
+    return TaskStatusOut.model_validate(task)
+
+
 VALID_STAGES = {"screened", "researching", "researched", "rejected"}
 
 

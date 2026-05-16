@@ -214,20 +214,31 @@ def _fmt(metric: str, value: float) -> str:
     return f"{value:.1f}"
 
 
+async def _check_cancelled(db: AsyncSession, task_id: int) -> bool:
+    """Check if the task has been requested to cancel (bypasses identity map)."""
+    result = await db.execute(
+        select(TaskStatus.status).where(TaskStatus.id == task_id)
+    )
+    row = result.scalar_one_or_none()
+    return row == "cancelling"
+
+
 async def run_screening(
     db: AsyncSession,
     filter_config: dict[str, Any] | None = None,
     preferences: dict[str, Any] | None = None,
     task_id: int | None = None,
+    max_examined: int | None = None,
+    max_matches: int | None = None,
 ) -> int:
     """Run the full screening pipeline. Returns the screening_run ID.
 
     Steps:
     1. Create a ScreeningRun row
     2. Query all cached stocks
-    3. Apply metric thresholds
+    3. Apply metric thresholds (with cancellation + limit checks every 10 stocks)
     4. For each passing stock: compute conviction, score, summary
-    5. Store ScreeningResult rows
+    5. Incremental commits every 10 results
     6. Update ScreeningRun status and TaskStatus progress
     """
     prefs = preferences or {}
@@ -238,12 +249,19 @@ async def run_screening(
     thresholds = _merge_thresholds(filter_config, metric_overrides)
 
     # --- Create ScreeningRun ---
+    config_to_store = dict(filter_config or {})
+    if max_examined is not None:
+        config_to_store["max_examined"] = max_examined
+    if max_matches is not None:
+        config_to_store["max_matches"] = max_matches
+
     run = ScreeningRun(
-        filter_config=filter_config or {},
+        filter_config=config_to_store,
         status="running",
+        task_id=task_id,
     )
     db.add(run)
-    await db.flush()  # get run.id
+    await db.commit()
     run_id = run.id
 
     # --- Update task if provided ---
@@ -253,13 +271,41 @@ async def run_screening(
     # --- Query all stocks ---
     result = await db.execute(select(Stock))
     stocks = list(result.scalars().all())
+    total_stocks = len(stocks)
 
     if task_id is not None:
-        await _update_task(db, task_id, progress="filtering")
+        await _update_task(
+            db, task_id, progress="screening",
+            progress_data={
+                "stage": "screening",
+                "stocks_examined": 0,
+                "matches_found": 0,
+                "total_stocks": total_stocks,
+                "log_entries": [],
+            },
+        )
 
-    # --- Filter + score ---
+    # --- Filter + score with cancellation and limits ---
     results_count = 0
+    examined_count = 0
+    cancelled = False
+    log_entries: list[dict[str, str]] = []
+    batch_size = 10
+
     for stock in stocks:
+        # Check cancellation every 10 stocks
+        if task_id and examined_count > 0 and examined_count % batch_size == 0:
+            if await _check_cancelled(db, task_id):
+                cancelled = True
+                break
+
+        # Check limits
+        if max_examined and examined_count >= max_examined:
+            break
+        if max_matches and results_count >= max_matches:
+            break
+
+        examined_count += 1
         metrics = _extract_metrics(stock)
         if not _passes_thresholds(metrics, thresholds):
             continue
@@ -289,22 +335,60 @@ async def run_screening(
         db.add(screening_result)
         results_count += 1
 
-    if task_id is not None:
-        await _update_task(db, task_id, progress="scoring")
+        log_entries.append({"message": f"Match: {stock.ticker} (score: {composite})"})
+
+        # Incremental commit every 10 results
+        if results_count % batch_size == 0:
+            await db.commit()
+            if task_id:
+                await _update_task(
+                    db, task_id, progress="screening",
+                    progress_data={
+                        "stage": "screening",
+                        "stocks_examined": examined_count,
+                        "matches_found": results_count,
+                        "total_stocks": total_stocks,
+                        "log_entries": log_entries[-10:],
+                    },
+                )
 
     # --- Finalize ---
-    run.status = "completed"
-
-    if task_id is not None:
-        await _update_task(db, task_id, status="completed", progress="done")
+    if cancelled:
+        run.status = "partial"
+        if task_id:
+            await _update_task(
+                db, task_id, status="cancelled", progress="cancelled",
+                progress_data={
+                    "stage": "cancelled",
+                    "stocks_examined": examined_count,
+                    "matches_found": results_count,
+                    "total_stocks": total_stocks,
+                    "log_entries": log_entries[-10:],
+                },
+            )
+    else:
+        run.status = "completed"
+        if task_id:
+            await _update_task(
+                db, task_id, status="completed", progress="done",
+                progress_data={
+                    "stage": "done",
+                    "stocks_examined": examined_count,
+                    "matches_found": results_count,
+                    "total_stocks": total_stocks,
+                    "log_entries": log_entries[-10:],
+                },
+            )
 
     await db.commit()
 
     logger.info(
-        "Screening run %d completed: %d/%d stocks passed",
+        "Screening run %d %s: %d/%d stocks passed (%d examined)",
         run_id,
+        run.status,
         results_count,
-        len(stocks),
+        total_stocks,
+        examined_count,
     )
     return run_id
 
@@ -314,6 +398,7 @@ async def _update_task(
     task_id: int,
     status: str | None = None,
     progress: str | None = None,
+    progress_data: dict[str, Any] | None = None,
     result_id: int | None = None,
 ) -> None:
     """Update a TaskStatus row in-place."""
@@ -330,7 +415,9 @@ async def _update_task(
         task.status = status
     if progress is not None:
         task.progress = progress
+    if progress_data is not None:
+        task.progress_data = progress_data
     if result_id is not None:
         task.result_id = result_id
-    if status == "completed":
+    if status in ("completed", "cancelled"):
         task.completed_at = datetime.now(timezone.utc)
