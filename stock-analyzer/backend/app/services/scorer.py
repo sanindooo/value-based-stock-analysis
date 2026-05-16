@@ -19,6 +19,10 @@ CATEGORY_METRICS: dict[str, list[str]] = {
         "ps_ratio",
         "price_to_cash",
         "price_to_fcf",
+        "beta",
+        "book_value_per_share",
+        "analyst_rating",
+        "trading_range_12m",
     ],
     "growth": [
         "eps_growth_this_year",
@@ -26,12 +30,14 @@ CATEGORY_METRICS: dict[str, list[str]] = {
         "eps_growth_past_5y",
         "eps_growth_next_5y",
         "sales_growth_past_5y",
+        "projected_earnings_growth",
     ],
     "financial_health": [
         "current_ratio",
         "quick_ratio",
         "debt_to_equity",
         "lt_debt_to_equity",
+        "debt_to_ebitda",
     ],
     "profitability": [
         "roe",
@@ -41,6 +47,7 @@ CATEGORY_METRICS: dict[str, list[str]] = {
         "operating_margin",
         "net_profit_margin",
         "dividend_yield",
+        "dividend_payout",
     ],
 }
 
@@ -58,17 +65,23 @@ METRIC_RANGES: dict[str, tuple[float, float, bool]] = {
     "ps_ratio": (0, 10, False),
     "price_to_cash": (0, 40, False),
     "price_to_fcf": (0, 40, False),
+    "beta": (0, 2, False),
+    "book_value_per_share": (0, 200, True),
+    "analyst_rating": (1, 5, True),
+    "trading_range_12m": (0, 100, False),
     # Growth — higher is better (percentages as decimals or whole numbers)
     "eps_growth_this_year": (-20, 50, True),
     "eps_growth_next_year": (-20, 50, True),
     "eps_growth_past_5y": (-10, 30, True),
     "eps_growth_next_5y": (-10, 30, True),
     "sales_growth_past_5y": (-10, 30, True),
+    "projected_earnings_growth": (-10, 40, True),
     # Financial health — mixed
     "current_ratio": (0, 4, True),
     "quick_ratio": (0, 3, True),
     "debt_to_equity": (0, 3, False),
     "lt_debt_to_equity": (0, 2, False),
+    "debt_to_ebitda": (0, 5, False),
     # Profitability — higher is better (percentages)
     "roe": (0, 40, True),
     "roa": (0, 20, True),
@@ -77,6 +90,7 @@ METRIC_RANGES: dict[str, tuple[float, float, bool]] = {
     "operating_margin": (0, 40, True),
     "net_profit_margin": (0, 30, True),
     "dividend_yield": (0, 8, True),
+    "dividend_payout": (0, 80, False),
 }
 
 DEFAULT_CATEGORY_WEIGHTS: dict[str, int] = {

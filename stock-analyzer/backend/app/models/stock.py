@@ -48,6 +48,16 @@ class Stock(Base):
     quick_ratio: Mapped[float | None] = mapped_column(Float)
     debt_to_equity: Mapped[float | None] = mapped_column(Float)
     lt_debt_to_equity: Mapped[float | None] = mapped_column(Float)
+    debt_to_ebitda: Mapped[float | None] = mapped_column(Float)
+
+    # Additional canonical metrics
+    website: Mapped[str | None] = mapped_column(String(500))
+    beta: Mapped[float | None] = mapped_column(Float)
+    book_value_per_share: Mapped[float | None] = mapped_column(Float)
+    dividend_payout: Mapped[float | None] = mapped_column(Float)
+    projected_earnings_growth: Mapped[float | None] = mapped_column(Float)
+    analyst_rating: Mapped[float | None] = mapped_column(Float)
+    trading_range_12m: Mapped[float | None] = mapped_column(Float)
 
     data_warnings: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 

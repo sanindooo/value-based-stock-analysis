@@ -50,6 +50,8 @@ class FMPProfile(BaseModel):
     industry: str | None = None
     marketCap: float | None = None
     price: float | None = None
+    beta: float | None = None
+    website: str | None = None
 
 
 class FMPKeyMetricsTTM(BaseModel):
@@ -58,6 +60,8 @@ class FMPKeyMetricsTTM(BaseModel):
     returnOnEquityTTM: float | None = None
     returnOnCapitalEmployedTTM: float | None = None
     earningsYieldTTM: float | None = None
+    bookValuePerShareTTM: float | None = None
+    debtToMarketCapTTM: float | None = None
 
 
 class FMPRatiosTTM(BaseModel):
@@ -76,6 +80,8 @@ class FMPRatiosTTM(BaseModel):
     longTermDebtToCapitalRatioTTM: float | None = None
     dividendYieldTTM: float | None = None
     dividendPerShareTTM: float | None = None
+    payoutRatioTTM: float | None = None
+    debtRatioTTM: float | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +241,8 @@ class FMPClient:
                     "industry": profile.industry,
                     "market_cap": profile.marketCap,
                     "price": profile.price,
+                    "beta": profile.beta,
+                    "website": profile.website,
                 }
             )
 
@@ -246,6 +254,7 @@ class FMPClient:
                     "roa": self._pct(metrics.returnOnAssetsTTM),
                     "roi": self._pct(metrics.returnOnCapitalEmployedTTM),
                     "current_ratio": metrics.currentRatioTTM,
+                    "book_value_per_share": metrics.bookValuePerShareTTM,
                 }
             )
 
@@ -266,6 +275,7 @@ class FMPClient:
                     "debt_to_equity": ratios.debtToEquityRatioTTM,
                     "lt_debt_to_equity": ratios.longTermDebtToCapitalRatioTTM,
                     "dividend_yield": self._pct(ratios.dividendYieldTTM),
+                    "dividend_payout": self._pct(ratios.payoutRatioTTM),
                     "forward_pe": None,
                 }
             )
@@ -283,6 +293,15 @@ class FMPClient:
             "sales_growth_past_5y",
         ]:
             result.setdefault(growth_field, None)
+
+        # Metrics requiring paid-tier endpoints (analyst-estimates, financial-growth)
+        for paid_field in [
+            "projected_earnings_growth",
+            "analyst_rating",
+            "trading_range_12m",
+            "debt_to_ebitda",
+        ]:
+            result.setdefault(paid_field, None)
 
         return result
 

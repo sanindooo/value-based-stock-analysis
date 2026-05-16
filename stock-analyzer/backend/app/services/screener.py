@@ -34,9 +34,16 @@ DEFAULT_THRESHOLDS: dict[str, dict[str, float | None]] = {
     "roa": {"min": 5, "max": None},
     "current_ratio": {"min": 1.5, "max": None},
     "debt_to_equity": {"min": None, "max": 1.0},
+    "debt_to_ebitda": {"min": None, "max": 3.0},
     "gross_margin": {"min": 30, "max": None},
     "net_profit_margin": {"min": 10, "max": None},
     "dividend_yield": {"min": 1, "max": None},
+    "dividend_payout": {"min": None, "max": 60},
+    "beta": {"min": None, "max": 1.5},
+    "book_value_per_share": {"min": 10, "max": None},
+    "projected_earnings_growth": {"min": 5, "max": None},
+    "analyst_rating": {"min": 3, "max": None},
+    "trading_range_12m": {"min": None, "max": 50},
 }
 
 # Metrics where we store the "all metrics" list from the Stock model
@@ -75,7 +82,7 @@ def _extract_metrics(stock: Stock) -> dict[str, Any]:
     return {
         col.name: getattr(stock, col.name)
         for col in Stock.__table__.columns
-        if col.name not in ("ticker", "company_name", "sector", "industry", "last_updated", "data_warnings")
+        if col.name not in ("ticker", "company_name", "sector", "industry", "last_updated", "data_warnings", "website")
     }
 
 
@@ -183,6 +190,10 @@ def _metric_label(metric: str) -> str:
         "ps_ratio": "P/S",
         "price_to_cash": "P/Cash",
         "price_to_fcf": "P/FCF",
+        "beta": "Beta",
+        "book_value_per_share": "Book Value/Share",
+        "analyst_rating": "Analyst Rating",
+        "trading_range_12m": "12M Trading Range",
         "roe": "ROE",
         "roa": "ROA",
         "roi": "ROI",
@@ -190,10 +201,13 @@ def _metric_label(metric: str) -> str:
         "quick_ratio": "Quick Ratio",
         "debt_to_equity": "D/E",
         "lt_debt_to_equity": "LT D/E",
+        "debt_to_ebitda": "Debt/EBITDA",
         "gross_margin": "Gross Margin",
         "operating_margin": "Op. Margin",
         "net_profit_margin": "Net Margin",
         "dividend_yield": "Div. Yield",
+        "dividend_payout": "Payout Ratio",
+        "projected_earnings_growth": "Proj. Earnings Growth",
         "eps_growth_this_year": "EPS Growth (This Year)",
         "eps_growth_next_year": "EPS Growth (Next Year)",
         "eps_growth_past_5y": "EPS Growth (5Y)",
