@@ -10,9 +10,14 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 
+import edgar
 from edgar import Company
 
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
+
+edgar.set_identity(f"StockAnalyzer {settings.user_email or 'admin@example.com'}")
 
 # Maximum characters for the raw-text fallback (~50K tokens)
 RAW_TEXT_MAX_CHARS = 200_000

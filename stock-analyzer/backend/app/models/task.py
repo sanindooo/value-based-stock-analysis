@@ -14,6 +14,7 @@ class TaskStatus(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending")
     result_id: Mapped[int | None] = mapped_column(Integer)
     progress: Mapped[str | None] = mapped_column(String(50))
+    description: Mapped[str | None] = mapped_column(String(200))
     error_message: Mapped[str | None] = mapped_column(String(1000))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

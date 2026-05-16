@@ -46,6 +46,7 @@ class ResearchTaskStatusOut(BaseModel):
     task_type: str
     status: str
     progress: str | None = None
+    description: str | None = None
     result_id: int | None = None
     error_message: str | None = None
 

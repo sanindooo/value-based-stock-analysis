@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     finnhub_api_key: str = ""
     site_secret: str = ""
+    user_email: str = "admin@example.com"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

@@ -17,6 +17,7 @@ interface StockCardProps {
   stock: StockResult
   selected: boolean
   onToggle: (id: number) => void
+  action?: React.ReactNode
 }
 
 function scoreColor(score: number): string {
@@ -30,7 +31,7 @@ function sectorBadge(sector: string | undefined): string {
   return "bg-indigo-50 text-indigo-700"
 }
 
-export default function StockCard({ stock, selected, onToggle }: StockCardProps) {
+export default function StockCard({ stock, selected, onToggle, action }: StockCardProps) {
   const metrics = stock.metric_snapshot || {}
   const conviction = stock.conviction_data || {}
   const sector = metrics.sector as unknown as string | undefined
@@ -121,6 +122,8 @@ export default function StockCard({ stock, selected, onToggle }: StockCardProps)
           {stock.summary}
         </p>
       )}
+
+      {action && <div className="mt-3">{action}</div>}
     </div>
   )
 }

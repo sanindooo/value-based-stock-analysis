@@ -70,6 +70,7 @@ async def start_research_run(
             task_type="research",
             status="pending",
             progress="queued",
+            description=ticker_upper,
         )
         db.add(task)
         await db.commit()
@@ -109,6 +110,21 @@ async def list_reports(db: AsyncSession = Depends(get_db)):
             )
         )
     return summaries
+
+
+@router.get("/active", response_model=list[ResearchTaskStatusOut])
+async def list_active_research_tasks(db: AsyncSession = Depends(get_db)):
+    """List in-flight research tasks (pending or running)."""
+    stmt = (
+        select(TaskStatus)
+        .where(
+            TaskStatus.task_type == "research",
+            TaskStatus.status.in_(["pending", "running"]),
+        )
+        .order_by(TaskStatus.created_at.desc())
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    return [ResearchTaskStatusOut.model_validate(r) for r in rows]
 
 
 @router.get("/status/{task_id}", response_model=ResearchTaskStatusOut)

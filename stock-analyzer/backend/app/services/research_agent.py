@@ -15,8 +15,11 @@ from anthropic import Anthropic
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import update
+
 from app.core.config import settings
 from app.models.research import ResearchReport
+from app.models.screening import ScreeningResult
 from app.models.task import TaskStatus
 from app.services.edgar_client import fetch_filing_sections
 from app.services.news_client import fetch_news
@@ -176,7 +179,7 @@ async def run_research_for_ticker(
             await db.commit()
             await db.refresh(report)
 
-            # Step 6: Mark task complete
+            # Step 6: Mark task complete and update screening stage
             result = await db.execute(select(TaskStatus).where(TaskStatus.id == task_id))
             task = result.scalar_one_or_none()
             if task:
@@ -184,7 +187,16 @@ async def run_research_for_ticker(
                 task.progress = "complete"
                 task.result_id = report.id
                 task.completed_at = datetime.now(timezone.utc)
-                await db.commit()
+
+            await db.execute(
+                update(ScreeningResult)
+                .where(
+                    ScreeningResult.stock_ticker == ticker,
+                    ScreeningResult.stage == "researching",
+                )
+                .values(stage="researched")
+            )
+            await db.commit()
 
             return report
 
