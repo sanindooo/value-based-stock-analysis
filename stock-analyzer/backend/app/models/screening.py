@@ -11,6 +11,9 @@ class ScreeningRun(Base):
     __tablename__ = "screening_runs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("task_status.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

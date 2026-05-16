@@ -48,7 +48,12 @@ async def _load_preferences(db: AsyncSession) -> dict[str, Any]:
     }
 
 
-async def _run_screening_task(task_id: int, filter_config: dict[str, Any] | None) -> None:
+async def _run_screening_task(
+    task_id: int,
+    filter_config: dict[str, Any] | None,
+    max_examined: int | None = None,
+    max_matches: int | None = None,
+) -> None:
     """Background task wrapper — fetches FMP data if cache is empty, then screens."""
     async with async_session() as db:
         try:
@@ -72,6 +77,8 @@ async def _run_screening_task(task_id: int, filter_config: dict[str, Any] | None
                 filter_config=filter_config,
                 preferences=preferences,
                 task_id=task_id,
+                max_examined=max_examined,
+                max_matches=max_matches,
             )
         except Exception:
             logger.exception("Screening task %d failed", task_id)
@@ -109,6 +116,19 @@ async def start_screening_run(
     Returns the task_id (for polling) and the run_id (for fetching results).
     The run_id is set on the task once the background worker creates the ScreeningRun.
     """
+    # Concurrent guard — only one screening task at a time
+    active = await db.execute(
+        select(TaskStatus).where(
+            TaskStatus.task_type == "screening",
+            TaskStatus.status.in_(["pending", "running"]),
+        )
+    )
+    if active.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="A screen is already running.",
+        )
+
     # Create task row first
     task = TaskStatus(task_type="screening", status="pending", progress="queued")
     db.add(task)
@@ -120,6 +140,8 @@ async def start_screening_run(
         _run_screening_task,
         task_id=task.id,
         filter_config=body.filter_config,
+        max_examined=body.max_examined,
+        max_matches=body.max_matches,
     )
 
     # run_id is 0 until the background task creates it — the client should
@@ -182,10 +204,18 @@ async def list_screening_runs(db: AsyncSession = Depends(get_db)):
             ScreeningRun.id,
             ScreeningRun.created_at,
             ScreeningRun.status,
+            ScreeningRun.filter_config,
+            ScreeningRun.task_id,
             func.count(ScreeningResult.id).label("result_count"),
         )
         .outerjoin(ScreeningResult, ScreeningResult.screening_run_id == ScreeningRun.id)
-        .group_by(ScreeningRun.id, ScreeningRun.created_at, ScreeningRun.status)
+        .group_by(
+            ScreeningRun.id,
+            ScreeningRun.created_at,
+            ScreeningRun.status,
+            ScreeningRun.filter_config,
+            ScreeningRun.task_id,
+        )
         .order_by(ScreeningRun.created_at.desc())
     )
     rows = (await db.execute(stmt)).all()
@@ -196,6 +226,8 @@ async def list_screening_runs(db: AsyncSession = Depends(get_db)):
             created_at=row.created_at,
             status=row.status,
             result_count=row.result_count,
+            filter_config=row.filter_config,
+            task_id=row.task_id,
         )
         for row in rows
     ]
@@ -215,6 +247,21 @@ async def get_task_status(task_id: int, db: AsyncSession = Depends(get_db)):
     if task is None:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
     return TaskStatusOut.model_validate(task)
+
+
+@router.get("/tasks", response_model=list[TaskStatusOut])
+async def list_screening_tasks(
+    status: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """List screening tasks, optionally filtered by status (comma-separated)."""
+    stmt = select(TaskStatus).where(TaskStatus.task_type == "screening")
+    if status:
+        statuses = [s.strip() for s in status.split(",")]
+        stmt = stmt.where(TaskStatus.status.in_(statuses))
+    stmt = stmt.order_by(TaskStatus.created_at.desc())
+    rows = (await db.execute(stmt)).scalars().all()
+    return [TaskStatusOut.model_validate(t) for t in rows]
 
 
 VALID_STAGES = {"screened", "researching", "researched", "rejected"}

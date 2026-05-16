@@ -10,6 +10,8 @@ from pydantic import BaseModel
 
 class ScreeningRunRequest(BaseModel):
     filter_config: dict[str, Any] | None = None
+    max_examined: int | None = None
+    max_matches: int | None = None
 
 
 class ScreeningRunResponse(BaseModel):
@@ -40,6 +42,8 @@ class ScreeningRunOut(BaseModel):
     created_at: datetime
     status: str
     result_count: int
+    filter_config: dict[str, Any] | None = None
+    task_id: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -49,8 +53,10 @@ class TaskStatusOut(BaseModel):
     task_type: str
     status: str
     progress: str | None = None
+    progress_data: dict[str, Any] | None = None
     result_id: int | None = None
     error_message: str | None = None
+    created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
