@@ -8,6 +8,7 @@ Uses the /stable/ API (v3 was deprecated August 2025).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -90,10 +91,12 @@ class FMPRatiosTTM(BaseModel):
 class FMPClient:
     """Async wrapper around the FMP stable API (free tier)."""
 
-    def __init__(self, api_key: str | None = None) -> None:
+    def __init__(self, api_key: str | None = None, max_concurrency: int = 5) -> None:
         self._api_key = api_key or settings.fmp_api_key
         self._daily_requests = 0
         self._day_started: datetime = datetime.now(timezone.utc)
+        self._lock = asyncio.Lock()
+        self._semaphore = asyncio.Semaphore(max_concurrency)
 
     # -- internal helpers ---------------------------------------------------
 
@@ -119,14 +122,15 @@ class FMPClient:
 
     async def _get(self, client: httpx.AsyncClient, path: str, params: dict[str, Any] | None = None) -> Any:
         """Make a GET request to FMP stable API, enforce rate limit, return parsed JSON."""
-        self._check_rate_limit()
+        async with self._lock:
+            self._check_rate_limit()
+            self._daily_requests += 1
 
         params = params or {}
         params["apikey"] = self._api_key
         url = f"{FMP_BASE}/{path}"
 
         resp = await client.get(url, params=params)
-        self._daily_requests += 1
 
         if resp.status_code == 429:
             raise RateLimitExceeded("FMP returned HTTP 429 — rate limited by server.")
@@ -383,19 +387,47 @@ class FMPClient:
         db: AsyncSession,
         tickers: list[str],
         force: bool = False,
+        cancel_check: Any | None = None,
     ) -> list[Stock]:
-        """Fetch and cache a list of tickers sequentially."""
+        """Fetch and cache tickers with concurrency limited by semaphore.
+
+        Args:
+            cancel_check: optional async callable returning True if cancelled.
+        """
         results: list[Stock] = []
-        for ticker in tickers:
-            try:
-                stock = await self.fetch_and_cache_ticker(client, db, ticker, force=force)
-                results.append(stock)
-            except RateLimitExceeded:
-                logger.error("Rate limit hit during batch — stopping at %d/%d tickers", len(results), len(tickers))
+        rate_limited = False
+
+        async def _fetch_one(ticker: str) -> Stock | None:
+            nonlocal rate_limited
+            if rate_limited:
+                return None
+            async with self._semaphore:
+                if rate_limited:
+                    return None
+                try:
+                    return await self.fetch_and_cache_ticker(client, db, ticker, force=force)
+                except RateLimitExceeded:
+                    rate_limited = True
+                    logger.error("Rate limit hit during batch at %s", ticker)
+                    return None
+                except (httpx.HTTPStatusError, FMPClientError) as exc:
+                    logger.warning("Failed to fetch %s: %s", ticker, exc)
+                    return None
+
+        # Process in batches of 5 to allow cancellation checks between batches
+        batch_size = self._semaphore._value
+        for i in range(0, len(tickers), batch_size):
+            if cancel_check and await cancel_check():
                 break
-            except (httpx.HTTPStatusError, FMPClientError) as exc:
-                logger.warning("Failed to fetch %s: %s", ticker, exc)
-                continue
+            if rate_limited:
+                break
+
+            batch = tickers[i : i + batch_size]
+            batch_results = await asyncio.gather(*[_fetch_one(t) for t in batch])
+            for stock in batch_results:
+                if stock is not None:
+                    results.append(stock)
+
         return results
 
     @property
