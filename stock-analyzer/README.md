@@ -85,7 +85,24 @@ docker exec stock-analyzer-backend-1 alembic upgrade head
 
 Sync data between local Docker Postgres and Railway production. Requires the Railway CLI (`brew install railway`) and `psql` installed locally.
 
+### First-time setup
+
+From the **repo root** (not `stock-analyzer/`):
+
 ```bash
+cd /path/to/value-based-stock-analysis
+python3 -m venv .venv
+source .venv/bin/activate
+pip install python-dotenv
+```
+
+### Sync commands
+
+All commands must be run from the **repo root** with the venv activated:
+
+```bash
+source .venv/bin/activate
+
 # Preview what would sync (no changes)
 python execution/sync_db.py local-to-prod --dry-run
 
