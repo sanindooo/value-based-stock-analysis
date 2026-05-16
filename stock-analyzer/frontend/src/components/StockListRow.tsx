@@ -72,9 +72,9 @@ export default function StockListRow({ stock, onClick, selected, onToggle, resea
       }
       if (researchStatus === "started") {
         return (
-          <a href={`/research/${stock.stock_ticker}`} className="text-xs font-medium text-green-600 hover:underline">
-            View progress
-          </a>
+          <span className="text-xs font-medium text-blue-600">
+            Research in progress
+          </span>
         )
       }
       if (researchStatus === "failed" && onResearch) {
