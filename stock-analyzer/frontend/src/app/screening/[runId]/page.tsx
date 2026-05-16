@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import StockCard, { type StockResult } from "@/components/stock-card";
+import StockListRow from "@/components/StockListRow";
+import StockDetailModal from "@/components/StockDetailModal";
+import ViewToggle, { useViewPreference } from "@/components/ViewToggle";
 import BulkActions from "@/components/bulk-actions";
 import PipelineStatus from "@/components/pipeline-status";
 import ProgressPanel from "@/components/ProgressPanel";
@@ -23,6 +26,12 @@ interface TaskStatus {
 interface ResultsPage {
 	results: StockResult[];
 	total: number;
+}
+
+interface RunDetails {
+	id: number;
+	created_at: string;
+	settings: Record<string, unknown>;
 }
 
 const SORT_OPTIONS = [
@@ -52,6 +61,10 @@ export default function ScreeningResultsPage() {
 	const [cancelling, setCancelling] = useState(false);
 
 	const { registerTask } = useTaskContext();
+
+	const { view } = useViewPreference("screening-results-view");
+	const [selectedStock, setSelectedStock] = useState<StockResult | null>(null);
+	const [runDetails, setRunDetails] = useState<RunDetails | null>(null);
 
 	const [results, setResults] = useState<StockResult[]>([]);
 	const [total, setTotal] = useState(0);
@@ -144,6 +157,16 @@ export default function ScreeningResultsPage() {
 	useEffect(() => {
 		fetchResults();
 	}, [fetchResults]);
+
+	// Fetch run details (settings)
+	useEffect(() => {
+		if (runId === null) return;
+		apiFetch<RunDetails>(`/screening/runs/${runId}`)
+			.then(setRunDetails)
+			.catch(() => {
+				// Non-critical — settings header just won't show
+			});
+	}, [runId]);
 
 	// Auto-refresh while any stocks are in "researching" state
 	const hasResearching = results.some((r) => r.stage === "researching");
@@ -404,6 +427,24 @@ export default function ScreeningResultsPage() {
 				</div>
 			</div>
 
+			{/* Run settings header */}
+			{runDetails?.settings && Object.keys(runDetails.settings).length > 0 && (
+				<div className="mb-6 rounded-xl border border-gray-200 bg-white px-5 py-3">
+					<p className="mb-2 text-xs font-medium text-gray-500">Run Settings</p>
+					<div className="flex flex-wrap gap-3">
+						{Object.entries(runDetails.settings).map(([key, value]) => (
+							<span
+								key={key}
+								className="inline-flex items-center gap-1.5 rounded-lg bg-gray-50 px-2.5 py-1 text-xs text-gray-700"
+							>
+								<span className="font-medium">{key.replace(/_/g, " ")}:</span>
+								<span className="tabular-nums">{String(value)}</span>
+							</span>
+						))}
+					</div>
+				</div>
+			)}
+
 			{/* Pipeline status */}
 			<div className="mb-6">
 				<PipelineStatus {...stageCounts} />
@@ -487,8 +528,9 @@ export default function ScreeningResultsPage() {
 					/>
 				</div>
 
-				{/* Select all / Show rejected */}
+				{/* View toggle / Select all / Show rejected */}
 				<div className="ml-auto flex items-center gap-4">
+					<ViewToggle storageKey="screening-results-view" />
 					<label className="flex items-center gap-2 text-sm text-gray-600">
 						<input
 							type="checkbox"
@@ -507,12 +549,22 @@ export default function ScreeningResultsPage() {
 				</div>
 			</div>
 
-			{/* Results grid */}
+			{/* Results */}
 			{filteredResults.length === 0 ? (
 				<div className="rounded-xl border border-gray-200 bg-white py-16 text-center">
 					<p className="text-sm text-gray-500">
 						No results match your filters.
 					</p>
+				</div>
+			) : view === "list" ? (
+				<div className="rounded-xl border border-gray-200 bg-white">
+					{filteredResults.map((stock) => (
+						<StockListRow
+							key={stock.id}
+							stock={stock}
+							onClick={() => setSelectedStock(stock)}
+						/>
+					))}
 				</div>
 			) : (
 				<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -587,6 +639,14 @@ export default function ScreeningResultsPage() {
 						/>
 					))}
 				</div>
+			)}
+
+			{/* Stock detail modal (list view) */}
+			{selectedStock && (
+				<StockDetailModal
+					stock={selectedStock}
+					onClose={() => setSelectedStock(null)}
+				/>
 			)}
 
 			{/* Floating bulk action bar */}
