@@ -310,11 +310,38 @@ class FMPClient:
                     return existing
 
         # 3 requests per ticker: profile, key-metrics-ttm, ratios-ttm
-        profile = await self.fetch_profile(client, ticker)
-        metrics = await self.key_metrics_ttm(client, ticker)
-        ratios = await self.ratios_ttm(client, ticker)
+        # Track 402 errors per endpoint
+        data_warnings: dict[str, int] = {}
+
+        profile = None
+        try:
+            profile = await self.fetch_profile(client, ticker)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 402:
+                data_warnings["profile"] = 402
+            else:
+                raise
+
+        metrics = None
+        try:
+            metrics = await self.key_metrics_ttm(client, ticker)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 402:
+                data_warnings["key_metrics_ttm"] = 402
+            else:
+                raise
+
+        ratios = None
+        try:
+            ratios = await self.ratios_ttm(client, ticker)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 402:
+                data_warnings["ratios_ttm"] = 402
+            else:
+                raise
 
         stock_data = self.map_to_stock(profile, metrics, ratios, ticker)
+        stock_data["data_warnings"] = data_warnings if data_warnings else None
 
         # Upsert
         result = await db.execute(select(Stock).where(Stock.ticker == ticker))

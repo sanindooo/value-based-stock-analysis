@@ -75,7 +75,7 @@ def _extract_metrics(stock: Stock) -> dict[str, Any]:
     return {
         col.name: getattr(stock, col.name)
         for col in Stock.__table__.columns
-        if col.name not in ("ticker", "company_name", "sector", "industry", "last_updated")
+        if col.name not in ("ticker", "company_name", "sector", "industry", "last_updated", "data_warnings")
     }
 
 
@@ -273,11 +273,15 @@ async def run_screening(
         )
         summary = _generate_summary(metrics, conviction, composite, thresholds)
 
+        snapshot = dict(metrics)
+        if stock.data_warnings:
+            snapshot["data_warnings"] = stock.data_warnings
+
         screening_result = ScreeningResult(
             screening_run_id=run_id,
             stock_ticker=stock.ticker,
             composite_score=composite,
-            metric_snapshot=metrics,
+            metric_snapshot=snapshot,
             conviction_data=conviction,
             summary=summary,
             stage="screened",

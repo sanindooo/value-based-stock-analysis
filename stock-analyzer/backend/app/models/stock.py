@@ -1,6 +1,8 @@
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import DateTime, Float, String, func
+from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -46,6 +48,8 @@ class Stock(Base):
     quick_ratio: Mapped[float | None] = mapped_column(Float)
     debt_to_equity: Mapped[float | None] = mapped_column(Float)
     lt_debt_to_equity: Mapped[float | None] = mapped_column(Float)
+
+    data_warnings: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
     last_updated: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
