@@ -196,6 +196,108 @@ async def get_screening_results(
     )
 
 
+@router.get("/highlights", response_model=list[ScreeningResultOut])
+async def get_screening_highlights(
+    min_score: float = Query(80),
+    limit: int = Query(5, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get exceptional stocks from the latest completed/partial screening run."""
+    # Find latest completed or partial run
+    run_result = await db.execute(
+        select(ScreeningRun)
+        .where(ScreeningRun.status.in_(["completed", "partial"]))
+        .order_by(ScreeningRun.created_at.desc())
+        .limit(1)
+    )
+    run = run_result.scalar_one_or_none()
+    if run is None:
+        return []
+
+    stmt = (
+        select(ScreeningResult)
+        .where(
+            ScreeningResult.screening_run_id == run.id,
+            ScreeningResult.composite_score >= min_score,
+        )
+        .order_by(ScreeningResult.composite_score.desc())
+        .limit(limit)
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+    return [ScreeningResultOut.model_validate(r) for r in rows]
+
+
+@router.get("/runs/{run_id}", response_model=ScreeningRunOut)
+async def get_screening_run(run_id: int, db: AsyncSession = Depends(get_db)):
+    """Get details for a single screening run including filter_config."""
+    stmt = (
+        select(
+            ScreeningRun.id,
+            ScreeningRun.created_at,
+            ScreeningRun.status,
+            ScreeningRun.filter_config,
+            ScreeningRun.task_id,
+            func.count(ScreeningResult.id).label("result_count"),
+        )
+        .outerjoin(ScreeningResult, ScreeningResult.screening_run_id == ScreeningRun.id)
+        .where(ScreeningRun.id == run_id)
+        .group_by(
+            ScreeningRun.id,
+            ScreeningRun.created_at,
+            ScreeningRun.status,
+            ScreeningRun.filter_config,
+            ScreeningRun.task_id,
+        )
+    )
+    row = (await db.execute(stmt)).one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Screening run {run_id} not found")
+    return ScreeningRunOut(
+        id=row.id,
+        created_at=row.created_at,
+        status=row.status,
+        result_count=row.result_count,
+        filter_config=row.filter_config,
+        task_id=row.task_id,
+    )
+
+
+@router.delete("/runs/{run_id}", status_code=204)
+async def delete_screening_run(run_id: int, db: AsyncSession = Depends(get_db)):
+    """Delete a screening run and its results. Cannot delete a running run."""
+    run_result = await db.execute(
+        select(ScreeningRun).where(ScreeningRun.id == run_id)
+    )
+    run = run_result.scalar_one_or_none()
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Screening run {run_id} not found")
+
+    if run.status == "running":
+        raise HTTPException(status_code=409, detail="Cancel the run before deleting.")
+
+    # Delete results first (FK constraint)
+    await db.execute(
+        select(ScreeningResult)
+        .where(ScreeningResult.screening_run_id == run_id)
+    )
+    from sqlalchemy import delete
+    await db.execute(
+        delete(ScreeningResult).where(ScreeningResult.screening_run_id == run_id)
+    )
+
+    # Delete associated task if exists
+    if run.task_id:
+        task_result = await db.execute(
+            select(TaskStatus).where(TaskStatus.id == run.task_id)
+        )
+        task = task_result.scalar_one_or_none()
+        if task:
+            await db.delete(task)
+
+    await db.delete(run)
+    await db.commit()
+
+
 @router.get("/runs", response_model=list[ScreeningRunOut])
 async def list_screening_runs(db: AsyncSession = Depends(get_db)):
     """List all past screening runs with result counts."""
