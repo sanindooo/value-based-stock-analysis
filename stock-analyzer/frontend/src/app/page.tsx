@@ -26,6 +26,16 @@ interface ReportSummary {
   confidence: string | null
 }
 
+interface HighlightStock {
+  id: number
+  stock_ticker: string
+  composite_score: number
+  metric_snapshot: Record<string, unknown>
+  conviction_data: Record<string, number>
+  summary: string | null
+  stage: string
+}
+
 interface StockResult {
   id: number
   stock_ticker: string
@@ -51,6 +61,7 @@ export default function Dashboard() {
   const [state, setState] = useState<DashboardState>("loading")
   const [runs, setRuns] = useState<ScreeningRun[]>([])
   const [reports, setReports] = useState<ReportSummary[]>([])
+  const [highlights, setHighlights] = useState<HighlightStock[]>([])
   const [stageCounts, setStageCounts] = useState({
     screened: 0,
     researching: 0,
@@ -59,15 +70,17 @@ export default function Dashboard() {
 
   const load = useCallback(async () => {
     try {
-      // Fetch preferences, screening runs, and reports in parallel
-      const [prefs, screeningRuns, researchReports] = await Promise.all([
+      // Fetch preferences, screening runs, reports, and highlights in parallel
+      const [prefs, screeningRuns, researchReports, exceptionalStocks] = await Promise.all([
         apiFetch<Preferences>("/preferences").catch(() => null),
         apiFetch<ScreeningRun[]>("/screening").catch(() => []),
         apiFetch<ReportSummary[]>("/research").catch(() => []),
+        apiFetch<HighlightStock[]>("/screening/highlights?min_score=80&limit=5").catch(() => []),
       ])
 
       setRuns(screeningRuns)
       setReports(researchReports)
+      setHighlights(exceptionalStocks)
 
       // Check if preferences are configured
       const hasPrefs =
@@ -137,7 +150,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-4xl">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
         <p className="mt-1 text-sm text-gray-500">
@@ -240,6 +253,37 @@ export default function Dashboard() {
             >
               View Research
             </a>
+          </div>
+        </div>
+      )}
+
+      {/* Exceptional stocks section — shown when highlights exist */}
+      {highlights.length > 0 && state !== "no-preferences" && state !== "no-runs" && (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <span className="text-amber-500">★</span>
+            <h2 className="text-sm font-semibold text-gray-900">Exceptional Stocks</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {highlights.map((stock) => {
+              const companyName = stock.metric_snapshot?.company_name
+              return (
+                <div
+                  key={stock.id}
+                  className="flex items-center justify-between rounded-lg border border-amber-200 bg-white px-4 py-3"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{stock.stock_ticker}</p>
+                    {typeof companyName === "string" && (
+                      <p className="text-xs text-gray-500">{companyName}</p>
+                    )}
+                  </div>
+                  <span className="rounded-md bg-green-50 px-2 py-0.5 text-sm font-bold tabular-nums text-green-700">
+                    {stock.composite_score.toFixed(0)}
+                  </span>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

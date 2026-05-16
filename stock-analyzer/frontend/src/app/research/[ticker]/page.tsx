@@ -5,6 +5,59 @@ import { useParams } from "next/navigation"
 import { apiFetch } from "@/lib/api"
 import ResearchReport from "@/components/research-report"
 
+interface MetricDirection {
+  higher_is_better: boolean
+  range_min: number
+  range_max: number
+}
+
+interface ThresholdsResponse {
+  thresholds: Record<string, number>
+  directions: Record<string, MetricDirection>
+}
+
+type TrafficColor = "green" | "orange" | "red" | "gray"
+
+function getTrafficColor(
+  key: string,
+  value: number,
+  directions: Record<string, MetricDirection>,
+  thresholds: Record<string, number>
+): TrafficColor {
+  const dir = directions[key]
+  if (!dir) return "gray"
+
+  const threshold = thresholds[key]
+  if (threshold === undefined) return "gray"
+
+  const range = dir.range_max - dir.range_min
+  const nearBuffer = range * 0.2
+
+  if (dir.higher_is_better) {
+    if (value >= threshold) return "green"
+    if (value >= threshold - nearBuffer) return "orange"
+    return "red"
+  } else {
+    if (value <= threshold) return "green"
+    if (value <= threshold + nearBuffer) return "orange"
+    return "red"
+  }
+}
+
+const COLOR_CLASSES: Record<TrafficColor, string> = {
+  green: "text-green-700",
+  orange: "text-amber-600",
+  red: "text-red-600",
+  gray: "text-gray-900",
+}
+
+const DOT_CLASSES: Record<TrafficColor, string> = {
+  green: "text-green-500",
+  orange: "text-amber-500",
+  red: "text-red-500",
+  gray: "text-gray-300",
+}
+
 interface ReportSummary {
   id: number
   stock_ticker: string
@@ -51,6 +104,7 @@ export default function ResearchTickerPage() {
   const [metrics, setMetrics] = useState<Record<string, number | null> | null>(
     null
   )
+  const [thresholds, setThresholds] = useState<ThresholdsResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -99,6 +153,9 @@ export default function ResearchTickerPage() {
   useEffect(() => {
     fetchReport()
     fetchMetrics()
+    apiFetch<ThresholdsResponse>("/screening/thresholds")
+      .then(setThresholds)
+      .catch(() => {})
   }, [fetchReport, fetchMetrics])
 
   if (loading) {
@@ -145,16 +202,23 @@ export default function ResearchTickerPage() {
               Screening Metrics
             </h2>
             <dl className="space-y-3">
-              {numericMetrics.map(([key, val]) => (
-                <div key={key}>
-                  <dt className="text-xs text-gray-500">
-                    {key.replace(/_/g, " ")}
-                  </dt>
-                  <dd className="text-sm font-medium tabular-nums text-gray-900">
-                    {typeof val === "number" ? val.toFixed(2) : "--"}
-                  </dd>
-                </div>
-              ))}
+              {numericMetrics.map(([key, val]) => {
+                const color: TrafficColor =
+                  typeof val === "number" && thresholds
+                    ? getTrafficColor(key, val, thresholds.directions, thresholds.thresholds)
+                    : "gray"
+                return (
+                  <div key={key}>
+                    <dt className="text-xs text-gray-500">
+                      {key.replace(/_/g, " ")}
+                    </dt>
+                    <dd className={`flex items-center gap-1.5 text-sm font-medium tabular-nums ${COLOR_CLASSES[color]}`}>
+                      <span className={DOT_CLASSES[color]} aria-hidden="true">●</span>
+                      {typeof val === "number" ? val.toFixed(2) : "--"}
+                    </dd>
+                  </div>
+                )
+              })}
             </dl>
           </div>
         </aside>

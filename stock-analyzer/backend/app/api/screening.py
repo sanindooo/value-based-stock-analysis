@@ -196,6 +196,23 @@ async def get_screening_results(
     )
 
 
+@router.get("/thresholds")
+async def get_thresholds():
+    """Serve canonical thresholds and metric direction flags for frontend coloring."""
+    from app.services.screener import DEFAULT_THRESHOLDS
+    from app.services.scorer import METRIC_RANGES
+
+    directions = {}
+    for metric, (range_min, range_max, higher_is_better) in METRIC_RANGES.items():
+        directions[metric] = {
+            "higher_is_better": higher_is_better,
+            "range_min": range_min,
+            "range_max": range_max,
+        }
+
+    return {"thresholds": DEFAULT_THRESHOLDS, "directions": directions}
+
+
 @router.get("/highlights", response_model=list[ScreeningResultOut])
 async def get_screening_highlights(
     min_score: float = Query(80),

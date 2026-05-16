@@ -129,7 +129,7 @@ export default function ScreeningPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">
             Stock Screening
@@ -141,7 +141,7 @@ export default function ScreeningPage() {
         <button
           onClick={startRun}
           disabled={starting || isScreenRunning}
-          className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          className="w-full rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50 sm:w-auto"
         >
           {starting ? "Starting..." : isScreenRunning ? "Screen Running" : "Run Screen"}
         </button>
@@ -161,7 +161,7 @@ export default function ScreeningPage() {
           Advanced options
         </button>
         {showAdvanced && (
-          <div className="mt-3 flex gap-4">
+          <div className="mt-3 flex flex-col gap-4 sm:flex-row">
             <div>
               <label className="text-xs text-gray-500">Max stocks to examine</label>
               <input

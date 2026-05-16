@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -83,32 +83,60 @@ async def start_research_run(
 
 
 @router.get("/reports", response_model=list[ResearchReportSummary])
-async def list_reports(db: AsyncSession = Depends(get_db)):
-    """List all research reports with summary info."""
-    stmt = (
-        select(ResearchReport)
-        .order_by(ResearchReport.created_at.desc())
-    )
+async def list_reports(
+    recommendation: str | None = Query(None),
+    confidence: str | None = Query(None),
+    ticker_search: str | None = Query(None),
+    deduplicated: bool = Query(True),
+    db: AsyncSession = Depends(get_db),
+):
+    """List research reports with optional filtering and deduplication.
+
+    When deduplicated=true (default), returns only the latest report per ticker.
+    """
+    stmt = select(ResearchReport).order_by(ResearchReport.created_at.desc())
+
+    if ticker_search:
+        stmt = stmt.where(
+            ResearchReport.stock_ticker.ilike(f"%{ticker_search.strip().upper()}%")
+        )
+
     rows = (await db.execute(stmt)).scalars().all()
 
     summaries: list[ResearchReportSummary] = []
     for r in rows:
         verdict = None
-        confidence = None
+        conf = None
         if isinstance(r.report_content, dict):
             opinion = r.report_content.get("investment_opinion", {})
             if isinstance(opinion, dict):
                 verdict = opinion.get("verdict")
-                confidence = opinion.get("confidence")
+                conf = opinion.get("confidence")
+
+        if recommendation and (verdict or "").lower() != recommendation.lower():
+            continue
+        if confidence and (conf or "").lower() != confidence.lower():
+            continue
+
         summaries.append(
             ResearchReportSummary(
                 id=r.id,
                 stock_ticker=r.stock_ticker,
                 created_at=r.created_at,
                 verdict=verdict,
-                confidence=confidence,
+                confidence=conf,
             )
         )
+
+    if deduplicated:
+        seen: set[str] = set()
+        deduped: list[ResearchReportSummary] = []
+        for s in summaries:
+            if s.stock_ticker not in seen:
+                seen.add(s.stock_ticker)
+                deduped.append(s)
+        summaries = deduped
+
     return summaries
 
 
