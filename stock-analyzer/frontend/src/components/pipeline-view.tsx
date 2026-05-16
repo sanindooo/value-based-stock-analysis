@@ -36,12 +36,12 @@ const STAGES: {
 
 export default function PipelineView(props: PipelineViewProps) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
       {STAGES.map((stage, idx) => {
         const count = props[stage.key]
         const isActive = count > 0
         return (
-          <div key={stage.key} className="flex items-center gap-2">
+          <div key={stage.key} className="flex items-center gap-1.5 sm:gap-2">
             {idx > 0 && (
               <svg
                 className="h-4 w-4 text-gray-300"
@@ -60,7 +60,7 @@ export default function PipelineView(props: PipelineViewProps) {
             )}
             <a
               href={stage.href}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors hover:opacity-80 ${
+              className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors hover:opacity-80 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm ${
                 isActive ? stage.activeColor : stage.color
               }`}
             >

@@ -34,6 +34,16 @@ def _safe_float(info: dict, key: str) -> float | None:
         return None
 
 
+def _bs_value(bs: Any, col: Any, row_name: str) -> float | None:
+    """Extract a value from a yfinance balance sheet DataFrame by row name."""
+    import math
+    if row_name in bs.index:
+        val = bs.loc[row_name, col]
+        if val is not None and not (isinstance(val, float) and math.isnan(val)):
+            return float(val)
+    return None
+
+
 def _fetch_ticker_sync(ticker: str) -> dict[str, Any]:
     """Synchronous yfinance fetch — runs in a thread via asyncio."""
     import yfinance as yf
@@ -67,6 +77,48 @@ def _fetch_ticker_sync(ticker: str) -> dict[str, Any]:
     if high_52 and low_52 and low_52 > 0:
         trading_range = round((high_52 - low_52) / low_52 * 100, 2)
 
+    # Primary values from info dict
+    pe_ratio = _safe_float(info, "trailingPE")
+    peg_ratio = _safe_float(info, "pegRatio")
+    current_ratio = _safe_float(info, "currentRatio")
+    debt_to_equity_raw = _safe_float(info, "debtToEquity")
+    debt_to_equity = debt_to_equity_raw / 100 if debt_to_equity_raw is not None else None
+    book_value = _safe_float(info, "bookValue")
+    earnings_growth = _safe_float(info, "earningsGrowth")
+
+    # PEG fallback: P/E ÷ (earningsGrowth × 100)
+    if peg_ratio is None and pe_ratio and earnings_growth and earnings_growth > 0:
+        peg_ratio = round(pe_ratio / (earnings_growth * 100), 4)
+
+    # Balance sheet fallbacks for D/E, Current Ratio, Book Value
+    needs_balance_sheet = (
+        debt_to_equity is None or current_ratio is None or book_value is None
+    )
+    if needs_balance_sheet:
+        try:
+            bs = t.balance_sheet
+            if not bs.empty:
+                col = bs.columns[0]
+
+                if debt_to_equity is None:
+                    total_liab = _bs_value(bs, col, "Total Liabilities Net Minority Interest")
+                    equity = _bs_value(bs, col, "Stockholders Equity") or _bs_value(bs, col, "Common Stock Equity")
+                    if total_liab is not None and equity and equity > 0:
+                        debt_to_equity = round(total_liab / equity, 4)
+
+                if current_ratio is None:
+                    cur_assets = _bs_value(bs, col, "Current Assets")
+                    cur_liab = _bs_value(bs, col, "Current Liabilities")
+                    if cur_assets and cur_liab and cur_liab > 0:
+                        current_ratio = round(cur_assets / cur_liab, 4)
+
+                if book_value is None and shares:
+                    equity = _bs_value(bs, col, "Stockholders Equity") or _bs_value(bs, col, "Common Stock Equity")
+                    if equity and shares > 0:
+                        book_value = round(equity / shares, 4)
+        except Exception:
+            pass
+
     return {
         "ticker": ticker,
         "company_name": info.get("longName") or info.get("shortName"),
@@ -77,9 +129,9 @@ def _fetch_ticker_sync(ticker: str) -> dict[str, Any]:
         "website": info.get("website"),
         "beta": _safe_float(info, "beta"),
         # Value metrics
-        "pe_ratio": _safe_float(info, "trailingPE"),
+        "pe_ratio": pe_ratio,
         "forward_pe": _safe_float(info, "forwardPE"),
-        "peg_ratio": _safe_float(info, "pegRatio"),
+        "peg_ratio": peg_ratio,
         "pb_ratio": _safe_float(info, "priceToBook"),
         "ps_ratio": _safe_float(info, "priceToSalesTrailing12Months"),
         "price_to_fcf": price_to_fcf,
@@ -93,16 +145,16 @@ def _fetch_ticker_sync(ticker: str) -> dict[str, Any]:
         "net_profit_margin": _pct(_safe_float(info, "profitMargins")),
         "dividend_yield": _pct(_safe_float(info, "dividendYield")),
         "dividend_payout": _pct(_safe_float(info, "payoutRatio")),
-        # Financial health (yfinance reports D/E as percentage, convert to ratio)
-        "current_ratio": _safe_float(info, "currentRatio"),
+        # Financial health
+        "current_ratio": current_ratio,
         "quick_ratio": _safe_float(info, "quickRatio"),
-        "debt_to_equity": _safe_float(info, "debtToEquity") / 100 if _safe_float(info, "debtToEquity") is not None else None,
+        "debt_to_equity": debt_to_equity,
         "lt_debt_to_equity": None,
         "debt_to_ebitda": None,
         # Book value
-        "book_value_per_share": _safe_float(info, "bookValue"),
+        "book_value_per_share": book_value,
         # Growth
-        "eps_growth_this_year": _pct(_safe_float(info, "earningsGrowth")),
+        "eps_growth_this_year": _pct(earnings_growth),
         "eps_growth_next_year": _pct(_safe_float(info, "earningsQuarterlyGrowth")),
         "eps_growth_past_5y": None,
         "eps_growth_next_5y": None,
@@ -154,30 +206,93 @@ async def fetch_and_cache_yahoo(
     return stock
 
 
+class BatchProgress:
+    """Tracks batch fetch progress for UI reporting."""
+
+    def __init__(self, total: int) -> None:
+        self.total = total
+        self.done = 0
+        self.cached = 0
+        self.fetched = 0
+        self.failed = 0
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "total": self.total,
+            "done": self.done,
+            "cached": self.cached,
+            "fetched": self.fetched,
+            "failed": self.failed,
+        }
+
+
 async def fetch_and_cache_yahoo_batch(
     db: AsyncSession,
     tickers: list[str],
     force: bool = False,
-    max_concurrency: int = 5,
+    max_concurrency: int | None = None,
+    on_progress: Any | None = None,
 ) -> list[Stock]:
-    """Fetch and cache multiple tickers with bounded concurrency."""
+    """Fetch and cache multiple tickers with bounded concurrency.
+
+    on_progress: async callable(BatchProgress) called every 50 tickers.
+    """
+    from app.core.config import settings
     from app.db import async_session
 
-    sem = asyncio.Semaphore(max_concurrency)
+    concurrency = max_concurrency or settings.yahoo_concurrency
+    sem = asyncio.Semaphore(concurrency)
     results: list[Stock] = []
+    total = len(tickers)
+    progress = BatchProgress(total)
 
     async def _fetch_one(t: str) -> Stock | None:
         async with sem:
             try:
                 async with async_session() as ticker_db:
-                    return await fetch_and_cache_yahoo(ticker_db, t, force=force)
+                    was_cached = False
+                    if not force:
+                        from datetime import timedelta
+                        result = await ticker_db.execute(select(Stock).where(Stock.ticker == t))
+                        existing = result.scalar_one_or_none()
+                        if existing and existing.last_updated:
+                            age = datetime.now(timezone.utc) - existing.last_updated.replace(tzinfo=timezone.utc)
+                            if age < timedelta(hours=24):
+                                was_cached = True
+
+                    stock = await fetch_and_cache_yahoo(ticker_db, t, force=force)
+                    progress.done += 1
+                    if was_cached:
+                        progress.cached += 1
+                    else:
+                        progress.fetched += 1
+
+                    if progress.done % 50 == 0:
+                        logger.info(
+                            "Yahoo batch: %d/%d done (%d cached, %d fetched, %d failed)",
+                            progress.done, total, progress.cached, progress.fetched, progress.failed,
+                        )
+                        if on_progress:
+                            await on_progress(progress)
+                    return stock
             except Exception as exc:
+                progress.done += 1
+                progress.failed += 1
                 logger.warning("Failed to fetch %s from Yahoo: %s", t, exc)
                 return None
 
+    logger.info("Fetching %d tickers from Yahoo Finance (concurrency=%d)", total, concurrency)
     batch_results = await asyncio.gather(*[_fetch_one(t) for t in tickers])
     for stock in batch_results:
         if stock is not None:
             results.append(stock)
 
+    # Final progress update
+    if on_progress:
+        await on_progress(progress)
+
+    logger.info(
+        "Yahoo batch complete: %d/%d succeeded (%d cached, %d fetched, %d failed)",
+        len(results), total, progress.cached, progress.fetched, progress.failed,
+    )
     return results

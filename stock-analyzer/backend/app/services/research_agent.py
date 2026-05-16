@@ -141,6 +141,13 @@ async def run_research_for_ticker(
     """
     async with _semaphore:
         try:
+            # Mark task as running now that we've acquired the semaphore
+            result = await db.execute(select(TaskStatus).where(TaskStatus.id == task_id))
+            task = result.scalar_one_or_none()
+            if task:
+                task.status = "running"
+                await db.commit()
+
             # Step 1: Fetch SEC filing
             await _update_task_progress(db, task_id, "fetching_filing")
             filing_data = await fetch_filing_sections(ticker)

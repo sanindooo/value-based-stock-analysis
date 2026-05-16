@@ -1,5 +1,5 @@
 interface ConvictionBarProps {
-  /** How far above/below threshold as a percentage (0-100+). */
+  /** How far above/below threshold as a percentage. Positive = passing, negative = failing. */
   percentage: number
   label: string
 }
@@ -9,29 +9,19 @@ function getConviction(pct: number): {
   bg: string
   text: string
 } {
-  if (pct >= 30) {
-    return {
-      color: "bg-green-500",
-      bg: "bg-green-50",
-      text: "Well above threshold",
-    }
+  const abs = Math.abs(pct)
+  if (pct >= 0) {
+    if (abs >= 30) return { color: "bg-green-500", bg: "bg-green-50", text: "Well above threshold" }
+    if (abs >= 10) return { color: "bg-yellow-500", bg: "bg-yellow-50", text: "Above threshold" }
+    return { color: "bg-yellow-400", bg: "bg-yellow-50", text: "Near threshold" }
   }
-  if (pct >= 10) {
-    return {
-      color: "bg-yellow-500",
-      bg: "bg-yellow-50",
-      text: "Above threshold",
-    }
-  }
-  return {
-    color: "bg-red-400",
-    bg: "bg-red-50",
-    text: "Barely passing",
-  }
+  if (abs >= 30) return { color: "bg-red-500", bg: "bg-red-50", text: "Well below threshold" }
+  if (abs >= 10) return { color: "bg-red-400", bg: "bg-red-50", text: "Below threshold" }
+  return { color: "bg-orange-400", bg: "bg-orange-50", text: "Near threshold" }
 }
 
 export default function ConvictionBar({ percentage, label }: ConvictionBarProps) {
-  const capped = Math.min(Math.max(percentage, 0), 100)
+  const capped = Math.min(Math.abs(percentage), 100)
   const { color, bg, text } = getConviction(percentage)
 
   return (

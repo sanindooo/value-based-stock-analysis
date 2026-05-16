@@ -13,6 +13,12 @@ export interface StockListItem {
 interface StockListRowProps {
   stock: StockListItem
   onClick: () => void
+  selected?: boolean
+  onToggle?: (id: number) => void
+  researchStatus?: string
+  onResearch?: () => void
+  onReject?: () => void
+  onUnreject?: () => void
 }
 
 function scoreColor(score: number): string {
@@ -23,10 +29,12 @@ function scoreColor(score: number): string {
 
 const KEY_METRICS: { key: string; label: string; suffix?: string }[] = [
   { key: "pe_ratio", label: "P/E" },
-  { key: "roe", label: "ROE", suffix: "%" },
+  { key: "projected_earnings_growth", label: "EG", suffix: "%" },
+  { key: "peg_ratio", label: "PEG" },
+  { key: "beta", label: "Beta" },
+  { key: "book_value_per_share", label: "BV" },
+  { key: "current_ratio", label: "CR" },
   { key: "debt_to_equity", label: "D/E" },
-  { key: "gross_margin", label: "GM", suffix: "%" },
-  { key: "dividend_yield", label: "Div", suffix: "%" },
 ]
 
 function formatMetric(val: unknown, suffix?: string): string {
@@ -34,7 +42,7 @@ function formatMetric(val: unknown, suffix?: string): string {
   return `${val.toFixed(1)}${suffix || ""}`
 }
 
-export default function StockListRow({ stock, onClick }: StockListRowProps) {
+export default function StockListRow({ stock, onClick, selected, onToggle, researchStatus, onResearch, onReject, onUnreject }: StockListRowProps) {
   const metrics = stock.metric_snapshot || {}
   const companyName = metrics.company_name as string | undefined
   const sector = metrics.sector as string | undefined
@@ -42,13 +50,107 @@ export default function StockListRow({ stock, onClick }: StockListRowProps) {
   const hasWarnings = dataWarnings && Object.keys(dataWarnings).length > 0
   const isExceptional = stock.composite_score >= 80
 
+  const actionContent = (() => {
+    if (stock.stage === "rejected" && onUnreject) {
+      return (
+        <button
+          onClick={(e) => { e.stopPropagation(); onUnreject(); }}
+          className="rounded-lg border border-gray-200 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+        >
+          Un-reject
+        </button>
+      )
+    }
+    if (stock.stage === "researching") {
+      if (researchStatus === "loading") {
+        return (
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-600">
+            <span className="h-3 w-3 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
+            Starting...
+          </span>
+        )
+      }
+      if (researchStatus === "started") {
+        return (
+          <a href={`/research/${stock.stock_ticker}`} className="text-xs font-medium text-green-600 hover:underline">
+            View progress
+          </a>
+        )
+      }
+      if (researchStatus === "failed" && onResearch) {
+        return (
+          <button
+            onClick={(e) => { e.stopPropagation(); onResearch(); }}
+            className="rounded-lg border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+          >
+            Retry
+          </button>
+        )
+      }
+      if (onResearch) {
+        return (
+          <button
+            onClick={(e) => { e.stopPropagation(); onResearch(); }}
+            className="rounded-lg border border-blue-200 px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+          >
+            Retry
+          </button>
+        )
+      }
+    }
+    if (stock.stage === "researched") {
+      return (
+        <a
+          href={`/research/${stock.stock_ticker}`}
+          onClick={(e) => e.stopPropagation()}
+          className="text-xs font-medium text-green-700 hover:underline"
+        >
+          View report
+        </a>
+      )
+    }
+    if (stock.stage === "screened" || !stock.stage) {
+      return (
+        <div className="flex items-center gap-1.5">
+          {onResearch && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onResearch(); }}
+              className="rounded-lg border border-blue-200 px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50"
+            >
+              Research
+            </button>
+          )}
+          {onReject && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onReject(); }}
+              className="rounded-lg border border-gray-200 px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-50"
+            >
+              Reject
+            </button>
+          )}
+        </div>
+      )
+    }
+    return null
+  })()
+
   return (
-    <button
+    <div
       onClick={onClick}
-      className={`flex w-full items-center gap-4 border-b px-4 py-3 text-left transition-colors hover:bg-gray-50 ${
-        isExceptional ? "border-b-amber-400" : "border-b-gray-100"
-      }`}
+      className={`flex w-full cursor-pointer items-center gap-4 border-b px-4 py-3 text-left transition-colors hover:bg-gray-50 ${
+        selected ? "bg-blue-50" : ""
+      } ${isExceptional ? "border-b-amber-400" : "border-b-gray-100"}`}
     >
+      {onToggle && (
+        <input
+          type="checkbox"
+          checked={selected ?? false}
+          onChange={(e) => { e.stopPropagation(); onToggle(stock.id); }}
+          onClick={(e) => e.stopPropagation()}
+          aria-label={`Select ${stock.stock_ticker}`}
+          className="h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+        />
+      )}
       <div className="min-w-0 flex-shrink-0 w-28">
         <div className="flex items-center gap-1.5">
           <span className="font-semibold text-gray-900">{stock.stock_ticker}</span>
@@ -92,6 +194,8 @@ export default function StockListRow({ stock, onClick }: StockListRowProps) {
         </span>
       )}
 
+      <div className="hidden shrink-0 sm:flex">{actionContent}</div>
+
       <div
         className={`flex h-8 w-10 shrink-0 items-center justify-center rounded-md text-sm font-bold tabular-nums ${scoreColor(stock.composite_score)}`}
       >
@@ -100,6 +204,6 @@ export default function StockListRow({ stock, onClick }: StockListRowProps) {
       <svg className="h-4 w-4 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
       </svg>
-    </button>
+    </div>
   )
 }

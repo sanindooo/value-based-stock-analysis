@@ -26,6 +26,7 @@ from app.schemas.screening import (
 )
 from app.services.fmp_client import FMPClient, RateLimitExceeded
 from app.services.screener import run_screening
+from app.services.ticker_universe import get_screening_universe
 from app.services.yahoo_client import fetch_and_cache_yahoo_batch
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,7 @@ async def _run_screening_task(
     max_examined: int | None = None,
     max_matches: int | None = None,
 ) -> None:
-    """Background task wrapper — fetches FMP data if cache is empty, then screens."""
+    """Background task wrapper — fetches market data, then screens."""
     failed = False
     try:
         async with async_session() as db:
@@ -64,9 +65,28 @@ async def _run_screening_task(
                 task.progress = "fetching_data"
                 await db.commit()
 
-            fmp = FMPClient()
-            tickers = fmp.get_candidate_tickers()[:80]
-            await fetch_and_cache_yahoo_batch(db, tickers)
+            tickers = get_screening_universe()
+
+            async def _on_fetch_progress(progress: Any) -> None:
+                async with async_session() as progress_db:
+                    result = await progress_db.execute(
+                        select(TaskStatus).where(TaskStatus.id == task_id)
+                    )
+                    t = result.scalar_one_or_none()
+                    if t and t.status not in ("completed", "cancelled", "failed"):
+                        snap = progress.snapshot()
+                        t.progress = "fetching_data"
+                        t.progress_data = {
+                            "stage": "fetching_data",
+                            "total_tickers": snap["total"],
+                            "tickers_done": snap["done"],
+                            "tickers_cached": snap["cached"],
+                            "tickers_fetched": snap["fetched"],
+                            "tickers_failed": snap["failed"],
+                        }
+                        await progress_db.commit()
+
+            await fetch_and_cache_yahoo_batch(db, tickers, on_progress=_on_fetch_progress)
 
             preferences = await _load_preferences(db)
             await run_screening(
@@ -396,6 +416,44 @@ async def cancel_screening_task(task_id: int, db: AsyncSession = Depends(get_db)
     await db.commit()
     await db.refresh(task)
     return TaskStatusOut.model_validate(task)
+
+
+@router.post("/runs/{run_id}/recompute", status_code=200)
+async def recompute_conviction(run_id: int, db: AsyncSession = Depends(get_db)):
+    """Recompute conviction_data and summary for all results in a run using current thresholds."""
+    from app.services.screener import DEFAULT_THRESHOLDS, _compute_conviction, _generate_summary
+
+    run_result = await db.execute(
+        select(ScreeningRun).where(ScreeningRun.id == run_id)
+    )
+    if run_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail=f"Screening run {run_id} not found")
+
+    results = (
+        await db.execute(
+            select(ScreeningResult).where(ScreeningResult.screening_run_id == run_id)
+        )
+    ).scalars().all()
+
+    updated = 0
+    for r in results:
+        metrics = dict(r.metric_snapshot or {})
+
+        # Apply fallback calculations on stored snapshot data
+        pe = metrics.get("pe_ratio")
+        eps_growth = metrics.get("eps_growth_this_year")
+        if metrics.get("peg_ratio") is None and pe and eps_growth and eps_growth > 0:
+            metrics["peg_ratio"] = round(pe / eps_growth, 4)
+            r.metric_snapshot = metrics
+
+        conviction = _compute_conviction(metrics, DEFAULT_THRESHOLDS)
+        summary = _generate_summary(metrics, conviction, r.composite_score, DEFAULT_THRESHOLDS)
+        r.conviction_data = conviction
+        r.summary = summary
+        updated += 1
+
+    await db.commit()
+    return {"updated": updated}
 
 
 VALID_STAGES = {"screened", "researching", "researched", "rejected"}

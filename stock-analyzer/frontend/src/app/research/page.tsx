@@ -21,6 +21,15 @@ interface ActiveTask {
   status: string
   progress: string | null
   description: string | null
+  created_at: string | null
+}
+
+interface TaskStatusResponse {
+  id: number
+  status: string
+  progress: string | null
+  description: string | null
+  created_at: string | null
 }
 
 export default function ResearchPage() {
@@ -28,6 +37,7 @@ export default function ResearchPage() {
   const [activeTasks, setActiveTasks] = useState<ActiveTask[]>([])
   const [loading, setLoading] = useState(true)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const trackedTaskIds = useRef<Set<number>>(new Set())
 
   // Research ticker overlay
   const [showResearchOverlay, setShowResearchOverlay] = useState(false)
@@ -69,11 +79,42 @@ export default function ResearchPage() {
 
   const loadActive = useCallback(async () => {
     try {
-      const data = await apiFetch<ActiveTask[]>("/research/active")
-      setActiveTasks(data)
-      if (data.length === 0 && pollingRef.current) {
+      const serverActive = await apiFetch<ActiveTask[]>("/research/active")
+
+      // Poll each tracked task individually (catches tasks that completed too fast for /active)
+      const tracked = trackedTaskIds.current
+      const trackedResults: ActiveTask[] = []
+      const completedIds: number[] = []
+
+      for (const taskId of Array.from(tracked)) {
+        // Skip if the server already reports this task as active
+        if (serverActive.some((t) => t.id === taskId)) continue
+        try {
+          const status = await apiFetch<TaskStatusResponse>(`/research/${taskId}?type=status`)
+          if (status.status === "completed" || status.status === "failed" || status.status === "cancelled") {
+            completedIds.push(taskId)
+          } else {
+            trackedResults.push(status)
+          }
+        } catch {
+          // Task may not exist yet or endpoint error — keep tracking
+        }
+      }
+
+      // Remove completed tasks from tracking
+      for (const id of completedIds) {
+        tracked.delete(id)
+      }
+
+      // Merge: server active + still-in-progress tracked tasks
+      const merged = [...serverActive, ...trackedResults]
+      setActiveTasks(merged)
+
+      if (merged.length === 0 && pollingRef.current) {
         clearInterval(pollingRef.current)
         pollingRef.current = null
+      }
+      if (completedIds.length > 0) {
         loadReports()
       }
     } catch {
@@ -119,18 +160,19 @@ export default function ResearchPage() {
     if (!ticker) return
     setSubmittingResearch(true)
     try {
-      await apiFetch("/research", {
+      const response = await apiFetch<{ tasks: { ticker: string; task_id: number }[] }>("/research", {
         method: "POST",
         body: JSON.stringify({ stock_tickers: [ticker] }),
       })
+      const taskId = response.tasks[0].task_id
+      trackedTaskIds.current.add(taskId)
       setActiveTasks((prev) => [
         ...prev,
-        { id: Date.now(), status: "pending", progress: "queued", description: ticker },
+        { id: taskId, status: "pending", progress: "queued", description: ticker, created_at: new Date().toISOString() },
       ])
       toast.success(`Research started for ${ticker}`)
       setShowResearchOverlay(false)
       setResearchTicker("")
-      loadActive()
       if (!pollingRef.current) {
         pollingRef.current = setInterval(() => {
           loadActive()
@@ -248,7 +290,7 @@ export default function ResearchPage() {
                   status={task.status}
                   progress={task.progress}
                   progressData={null}
-                  createdAt={null}
+                  createdAt={task.created_at}
                 />
               </div>
             ))}

@@ -90,6 +90,7 @@ export default function ScreeningResultsPage() {
 	const [results, setResults] = useState<StockResult[]>([]);
 	const [total, setTotal] = useState(0);
 	const [loading, setLoading] = useState(true);
+	const [recomputing, setRecomputing] = useState(false);
 
 	const [sortBy, setSortBy] = useState("composite_score");
 	const [order, setOrder] = useState<"asc" | "desc">("desc");
@@ -181,6 +182,42 @@ export default function ScreeningResultsPage() {
 		fetchResults();
 	}, [fetchResults]);
 
+	async function recomputeConviction() {
+		if (runId === null) return;
+		setRecomputing(true);
+		try {
+			await apiFetch(`/screening/runs/${runId}/recompute`, { method: "POST" });
+			await fetchResults();
+		} catch {
+			setTaskError("Failed to recompute");
+		} finally {
+			setRecomputing(false);
+		}
+	}
+
+	// Lightweight stage-only poll to avoid full re-render during research
+	const pollStages = useCallback(async () => {
+		if (runId === null) return;
+		try {
+			const qs = new URLSearchParams({ sort_by: sortBy, order, limit: "200", offset: "0" }).toString();
+			const data = await apiFetch<ResultsPage>(`/screening/${runId}?${qs}`);
+			setResults((prev) => {
+				let changed = false;
+				const next = prev.map((r) => {
+					const updated = data.results.find((u) => u.id === r.id);
+					if (updated && updated.stage !== r.stage) {
+						changed = true;
+						return { ...r, stage: updated.stage };
+					}
+					return r;
+				});
+				return changed ? next : prev;
+			});
+		} catch {
+			// Non-critical polling failure
+		}
+	}, [runId, sortBy, order]);
+
 	// Fetch run details (settings)
 	useEffect(() => {
 		if (runId === null) return;
@@ -197,7 +234,7 @@ export default function ScreeningResultsPage() {
 
 	useEffect(() => {
 		if (hasResearching && !researchPollRef.current) {
-			researchPollRef.current = setInterval(fetchResults, 5000);
+			researchPollRef.current = setInterval(pollStages, 5000);
 		}
 		if (!hasResearching && researchPollRef.current) {
 			clearInterval(researchPollRef.current);
@@ -209,7 +246,7 @@ export default function ScreeningResultsPage() {
 				researchPollRef.current = null;
 			}
 		};
-	}, [hasResearching, fetchResults]);
+	}, [hasResearching, pollStages]);
 
 	// -----------------------------------------------------------------------
 	// Derived data
@@ -552,6 +589,19 @@ export default function ScreeningResultsPage() {
 						Advanced
 					</button>
 
+					{/* Recompute conviction */}
+					<button
+						onClick={recomputeConviction}
+						disabled={recomputing}
+						className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-500 transition-colors hover:text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+						title="Recompute conviction bars with latest thresholds"
+					>
+						<svg className={`h-3.5 w-3.5 ${recomputing ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+						</svg>
+						{recomputing ? "Recomputing..." : "Refresh scores"}
+					</button>
+
 					{/* View toggle / Select all / Show rejected */}
 					<div className="ml-auto flex items-center gap-4">
 						<ViewToggle storageKey="screening-results-view" onChange={setView} />
@@ -665,6 +715,12 @@ export default function ScreeningResultsPage() {
 							key={stock.id}
 							stock={stock}
 							onClick={() => setSelectedStock(stock)}
+							selected={selected.has(stock.id)}
+							onToggle={toggleSelection}
+							researchStatus={researchStatus[stock.id]}
+							onResearch={() => triggerResearch([stock.id])}
+							onReject={() => updateStage(stock.id, "rejected")}
+							onUnreject={() => unreject(stock.id)}
 						/>
 					))}
 				</div>

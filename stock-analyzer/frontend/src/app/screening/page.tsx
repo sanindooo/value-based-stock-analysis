@@ -54,10 +54,10 @@ export default function ScreeningPage() {
 
   // Reload runs when a task completes
   useEffect(() => {
-    if (activeScreeningTask?.status === "completed" || activeScreeningTask?.status === "cancelled") {
+    if (lastCompletedTask) {
       loadRuns()
     }
-  }, [activeScreeningTask?.status, loadRuns])
+  }, [lastCompletedTask, loadRuns])
 
   // Persist advanced collapse state
   useEffect(() => {
@@ -199,7 +199,7 @@ export default function ScreeningPage() {
               />
             </div>
             <div>
-              <label className="text-xs text-gray-500">Max matches to collect</label>
+              <label className="text-xs text-gray-500">Top N results</label>
               <input
                 type="number"
                 min="1"

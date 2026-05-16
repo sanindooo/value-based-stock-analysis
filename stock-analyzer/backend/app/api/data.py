@@ -63,6 +63,15 @@ class StockOut(BaseModel):
     quick_ratio: float | None = None
     debt_to_equity: float | None = None
     lt_debt_to_equity: float | None = None
+    debt_to_ebitda: float | None = None
+
+    dividend_payout: float | None = None
+    beta: float | None = None
+    book_value_per_share: float | None = None
+    projected_earnings_growth: float | None = None
+    analyst_rating: float | None = None
+    trading_range_12m: float | None = None
+    website: str | None = None
 
     last_updated: str | None = None  # ISO 8601
 
@@ -139,12 +148,33 @@ async def list_stocks(
 
 
 @router.get("/stocks/{ticker}", response_model=StockOut)
-async def get_stock(ticker: str, db: AsyncSession = Depends(get_db)):
-    """Get a single cached stock by ticker."""
+async def get_stock(
+    ticker: str,
+    fetch: bool = Query(False, description="Fetch from Yahoo Finance if not cached"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get a single stock by ticker. With fetch=true, fetches from Yahoo if not cached."""
     result = await db.execute(select(Stock).where(Stock.ticker == ticker.upper()))
     stock = result.scalar_one_or_none()
+    if not stock and fetch:
+        from app.services.yahoo_client import fetch_and_cache_yahoo
+        try:
+            stock = await fetch_and_cache_yahoo(db, ticker.upper(), force=True)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Failed to fetch {ticker.upper()}: {exc}")
     if not stock:
-        raise HTTPException(status_code=404, detail=f"Ticker {ticker.upper()} not found in cache")
+        raise HTTPException(status_code=404, detail=f"Ticker {ticker.upper()} not found")
+    return _stock_to_out(stock)
+
+
+@router.post("/stocks/{ticker}/refresh", response_model=StockOut)
+async def refresh_stock(ticker: str, db: AsyncSession = Depends(get_db)):
+    """Force-refresh a single stock from Yahoo Finance."""
+    from app.services.yahoo_client import fetch_and_cache_yahoo
+    try:
+        stock = await fetch_and_cache_yahoo(db, ticker.upper(), force=True)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch {ticker.upper()}: {exc}")
     return _stock_to_out(stock)
 
 

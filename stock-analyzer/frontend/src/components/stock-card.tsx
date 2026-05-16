@@ -39,11 +39,19 @@ export default function StockCard({ stock, selected, onToggle, action }: StockCa
   const dataWarnings = metrics.data_warnings as unknown as Record<string, unknown> | undefined
   const hasWarnings = dataWarnings && Object.keys(dataWarnings).length > 0
 
-  // Get top 5 metrics by conviction percentage (excluding non-numeric fields)
-  const metricEntries = Object.entries(conviction)
-    .filter(([key]) => key !== "composite_score")
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 5)
+  const SCREENING_METRICS = [
+    "pe_ratio",
+    "projected_earnings_growth",
+    "peg_ratio",
+    "beta",
+    "book_value_per_share",
+    "current_ratio",
+    "debt_to_equity",
+  ]
+  const metricEntries: [string, number][] = SCREENING_METRICS.map((key) => [
+    key,
+    conviction[key] ?? 0,
+  ])
 
   const isRejected = stock.stage === "rejected"
   const isExceptional = stock.composite_score >= 80

@@ -18,6 +18,7 @@ export async function GET(
       `${BACKEND_URL}/api/research/status/${id}`,
       {
         headers: { "Content-Type": "application/json" },
+        cache: "no-store",
       }
     )
     const data = await res.json()

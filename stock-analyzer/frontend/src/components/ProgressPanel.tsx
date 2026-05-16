@@ -66,8 +66,53 @@ export default function ProgressPanel({
         <span className="text-xs tabular-nums text-gray-500">{elapsed}</span>
       </div>
 
-      {/* Counts */}
-      {progressData && (
+      {/* Fetch phase progress */}
+      {progressData && progressData.stage === "fetching_data" && progressData.total_tickers != null && (
+        <div className="mb-3">
+          <div className="mb-2 flex items-center justify-between text-xs text-gray-500">
+            <span>
+              {progressData.tickers_done}/{progressData.total_tickers} tickers
+              {progressData.tickers_cached ? ` (${progressData.tickers_cached} cached` : ""}
+              {progressData.tickers_failed ? `, ${progressData.tickers_failed} failed` : ""}
+              {progressData.tickers_cached ? ")" : ""}
+            </span>
+            <span>{Math.round(((progressData.tickers_done ?? 0) / progressData.total_tickers) * 100)}%</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-gray-100">
+            <div
+              className="h-full rounded-full bg-blue-500 transition-all"
+              style={{ width: `${((progressData.tickers_done ?? 0) / progressData.total_tickers) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Screening phase counts */}
+      {progressData && progressData.stage === "screening" && (
+        <div className="mb-3 grid grid-cols-3 gap-3">
+          <div className="rounded-lg bg-gray-50 px-3 py-2 text-center">
+            <div className="text-lg font-bold tabular-nums text-gray-900">
+              {progressData.stocks_examined}
+            </div>
+            <div className="text-xs text-gray-500">Scored</div>
+          </div>
+          <div className="rounded-lg bg-gray-50 px-3 py-2 text-center">
+            <div className="text-lg font-bold tabular-nums text-green-700">
+              {progressData.matches_found}
+            </div>
+            <div className="text-xs text-gray-500">Eligible</div>
+          </div>
+          <div className="rounded-lg bg-gray-50 px-3 py-2 text-center">
+            <div className="text-lg font-bold tabular-nums text-gray-900">
+              {progressData.total_stocks}
+            </div>
+            <div className="text-xs text-gray-500">Total</div>
+          </div>
+        </div>
+      )}
+
+      {/* Done phase summary */}
+      {progressData && progressData.stage === "done" && (
         <div className="mb-3 grid grid-cols-3 gap-3">
           <div className="rounded-lg bg-gray-50 px-3 py-2 text-center">
             <div className="text-lg font-bold tabular-nums text-gray-900">
@@ -79,7 +124,7 @@ export default function ProgressPanel({
             <div className="text-lg font-bold tabular-nums text-green-700">
               {progressData.matches_found}
             </div>
-            <div className="text-xs text-gray-500">Matches</div>
+            <div className="text-xs text-gray-500">Collected</div>
           </div>
           <div className="rounded-lg bg-gray-50 px-3 py-2 text-center">
             <div className="text-lg font-bold tabular-nums text-gray-900">

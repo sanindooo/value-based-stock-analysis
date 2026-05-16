@@ -25,23 +25,30 @@ logger = logging.getLogger(__name__)
 # Default Buffett-style thresholds
 # ---------------------------------------------------------------------------
 DEFAULT_THRESHOLDS: dict[str, dict[str, float | None]] = {
-    "pe_ratio": {"min": None, "max": 30},
-    "peg_ratio": {"min": None, "max": 2.0},
-    "pb_ratio": {"min": None, "max": 5},
-    "ps_ratio": {"min": None, "max": 8},
-    "price_to_fcf": {"min": None, "max": 30},
+    # Value metrics (lower is better) — Graham Ch.14 adjusted for modern markets
+    "pe_ratio": {"min": None, "max": 20},
+    "peg_ratio": {"min": None, "max": 1.0},
+    "pb_ratio": {"min": None, "max": 1.5},
+    "ps_ratio": {"min": None, "max": 3},
+    "price_to_fcf": {"min": None, "max": 15},
+    # Profitability (higher is better)
     "roe": {"min": 12, "max": None},
     "roa": {"min": 4, "max": None},
-    "current_ratio": {"min": 1.0, "max": None},
-    "debt_to_equity": {"min": None, "max": 1.5},
-    "debt_to_ebitda": {"min": None, "max": 4.0},
     "gross_margin": {"min": 25, "max": None},
     "net_profit_margin": {"min": 8, "max": None},
+    # Financial health — Graham Ch.14
+    "current_ratio": {"min": 1.5, "max": None},
+    "debt_to_equity": {"min": None, "max": 0.5},
+    "debt_to_ebitda": {"min": None, "max": 3.0},
+    # Growth — Graham/Buffett minimum
+    "projected_earnings_growth": {"min": 5, "max": None},
+    # Stability — Graham margin of safety
+    "beta": {"min": None, "max": 1.0},
+    "book_value_per_share": {"min": 0, "max": None},
+    # Income
     "dividend_yield": {"min": None, "max": None},
     "dividend_payout": {"min": None, "max": 75},
-    "beta": {"min": None, "max": 2.0},
-    "book_value_per_share": {"min": None, "max": None},
-    "projected_earnings_growth": {"min": None, "max": None},
+    # Informational (no threshold)
     "analyst_rating": {"min": None, "max": None},
     "trading_range_12m": {"min": None, "max": None},
 }
@@ -90,33 +97,10 @@ _CORE_METRICS = {"pe_ratio", "roe", "debt_to_equity", "gross_margin", "current_r
 _MIN_CORE_REQUIRED = 3
 
 
-def _passes_thresholds(
-    metrics: dict[str, Any],
-    thresholds: dict[str, dict[str, float | None]],
-) -> bool:
-    """Check if a stock's metrics pass ALL threshold criteria.
-
-    Stocks must have at least 3 of the 5 core metrics populated.
-    If a non-core metric value is None, that filter is skipped.
-    """
+def _has_core_metrics(metrics: dict[str, Any]) -> bool:
+    """Check if a stock has enough core metrics to be scored meaningfully."""
     core_present = sum(1 for m in _CORE_METRICS if metrics.get(m) is not None)
-    if core_present < _MIN_CORE_REQUIRED:
-        return False
-
-    for metric, bounds in thresholds.items():
-        value = metrics.get(metric)
-        if value is None:
-            continue
-
-        min_val = bounds.get("min")
-        max_val = bounds.get("max")
-
-        if min_val is not None and value < min_val:
-            return False
-        if max_val is not None and value > max_val:
-            return False
-
-    return True
+    return core_present >= _MIN_CORE_REQUIRED
 
 
 def _compute_conviction(
@@ -256,13 +240,9 @@ async def run_screening(
 ) -> int:
     """Run the full screening pipeline. Returns the screening_run ID.
 
-    Steps:
-    1. Create a ScreeningRun row
-    2. Query all cached stocks
-    3. Apply metric thresholds (with cancellation + limit checks every 10 stocks)
-    4. For each passing stock: compute conviction, score, summary
-    5. Incremental commits every 10 results
-    6. Update ScreeningRun status and TaskStatus progress
+    Scores ALL stocks with sufficient data, ranks by composite score,
+    and returns the top max_matches results. Thresholds feed into conviction
+    data but do not hard-filter stocks out of results.
     """
     prefs = preferences or {}
     category_weights = prefs.get("category_weights")
@@ -308,29 +288,29 @@ async def run_screening(
             },
         )
 
-    # --- Filter + score with cancellation and limits ---
-    results_count = 0
+    # --- Score all stocks, rank, and collect top N ---
     examined_count = 0
     cancelled = False
     log_entries: list[dict[str, str]] = []
     batch_size = 10
 
+    # Phase 1: Score all eligible stocks
+    scored: list[tuple[Stock, dict[str, Any], float, dict[str, float]]] = []
+
     for stock in stocks:
-        # Check cancellation every 10 stocks
         if task_id and examined_count > 0 and examined_count % batch_size == 0:
             if await _check_cancelled(db, task_id):
                 cancelled = True
                 break
 
-        # Check limits
         if max_examined and examined_count >= max_examined:
-            break
-        if max_matches and results_count >= max_matches:
             break
 
         examined_count += 1
         metrics = _extract_metrics(stock)
-        if not _passes_thresholds(metrics, thresholds):
+
+        # Skip stocks without enough core data
+        if not _has_core_metrics(metrics):
             continue
 
         conviction = _compute_conviction(metrics, thresholds)
@@ -340,6 +320,39 @@ async def run_screening(
             preferred_sectors=preferred_sectors,
             stock_sector=stock.sector,
         )
+        scored.append((stock, metrics, composite, conviction))
+
+        if task_id and examined_count % batch_size == 0:
+            await _update_task(
+                db, task_id, progress="screening",
+                progress_data={
+                    "stage": "screening",
+                    "stocks_examined": examined_count,
+                    "matches_found": len(scored),
+                    "total_stocks": total_stocks,
+                    "log_entries": [],
+                },
+            )
+
+    # Phase 2: Rank by composite score and take top N
+    scored.sort(key=lambda x: x[2], reverse=True)
+    limit = max_matches if max_matches else len(scored)
+    top_results = scored[:limit]
+
+    # Load prior stages from previous runs so we preserve research/rejection status
+    prior_stages: dict[str, str] = {}
+    prior_result = await db.execute(
+        select(ScreeningResult.stock_ticker, ScreeningResult.stage)
+        .where(ScreeningResult.stage.in_(["researched", "researching", "rejected"]))
+        .order_by(ScreeningResult.id.desc())
+    )
+    for ticker, stage in prior_result.all():
+        if ticker not in prior_stages:
+            prior_stages[ticker] = stage
+
+    # Phase 3: Write results
+    results_count = 0
+    for stock, metrics, composite, conviction in top_results:
         summary = _generate_summary(metrics, conviction, composite, thresholds)
 
         snapshot = dict(metrics)
@@ -349,6 +362,8 @@ async def run_screening(
         if stock.data_warnings:
             snapshot["data_warnings"] = stock.data_warnings
 
+        stage = prior_stages.get(stock.ticker, "screened")
+
         screening_result = ScreeningResult(
             screening_run_id=run_id,
             stock_ticker=stock.ticker,
@@ -356,27 +371,14 @@ async def run_screening(
             metric_snapshot=snapshot,
             conviction_data=conviction,
             summary=summary,
-            stage="screened",
+            stage=stage,
         )
         db.add(screening_result)
         results_count += 1
-
         log_entries.append({"message": f"Match: {stock.ticker} (score: {composite})"})
 
-        # Incremental commit every 10 results
         if results_count % batch_size == 0:
             await db.commit()
-            if task_id:
-                await _update_task(
-                    db, task_id, progress="screening",
-                    progress_data={
-                        "stage": "screening",
-                        "stocks_examined": examined_count,
-                        "matches_found": results_count,
-                        "total_stocks": total_stocks,
-                        "log_entries": log_entries[-10:],
-                    },
-                )
 
     # --- Finalize ---
     if cancelled:
@@ -409,12 +411,13 @@ async def run_screening(
     await db.commit()
 
     logger.info(
-        "Screening run %d %s: %d/%d stocks passed (%d examined)",
+        "Screening run %d %s: %d/%d stocks collected (%d examined, %d scored)",
         run_id,
         run.status,
         results_count,
         total_stocks,
         examined_count,
+        len(scored),
     )
     return run_id
 

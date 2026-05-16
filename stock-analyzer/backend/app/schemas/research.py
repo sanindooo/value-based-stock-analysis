@@ -49,5 +49,6 @@ class ResearchTaskStatusOut(BaseModel):
     description: str | None = None
     result_id: int | None = None
     error_message: str | None = None
+    created_at: datetime | None = None
 
     model_config = {"from_attributes": True}

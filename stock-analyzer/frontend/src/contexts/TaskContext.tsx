@@ -9,6 +9,12 @@ export interface ProgressData {
   matches_found: number
   total_stocks: number
   log_entries: { message: string }[]
+  // Fetch phase fields
+  total_tickers?: number
+  tickers_done?: number
+  tickers_cached?: number
+  tickers_fetched?: number
+  tickers_failed?: number
 }
 
 export interface TaskState {

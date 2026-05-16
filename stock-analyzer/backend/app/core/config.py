@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     finnhub_api_key: str = ""
     site_secret: str = ""
     user_email: str = "admin@example.com"
+    yahoo_concurrency: int = 10
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
