@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import async_session, get_db
 from app.models.preference import PortfolioPreference
 from app.models.screening import ScreeningResult, ScreeningRun
+from app.models.stock import Stock
 from app.models.task import TaskStatus
 from app.schemas.screening import (
     ScreeningResultOut,
@@ -22,6 +24,7 @@ from app.schemas.screening import (
     StageUpdate,
     TaskStatusOut,
 )
+from app.services.fmp_client import FMPClient, RateLimitExceeded
 from app.services.screener import run_screening
 
 logger = logging.getLogger(__name__)
@@ -46,9 +49,23 @@ async def _load_preferences(db: AsyncSession) -> dict[str, Any]:
 
 
 async def _run_screening_task(task_id: int, filter_config: dict[str, Any] | None) -> None:
-    """Background task wrapper — opens its own DB session."""
+    """Background task wrapper — fetches FMP data if cache is empty, then screens."""
     async with async_session() as db:
         try:
+            # Check if we have cached stock data
+            count = (await db.execute(select(func.count()).select_from(Stock))).scalar() or 0
+            if count == 0:
+                # Populate cache from FMP screener
+                task = (await db.execute(select(TaskStatus).where(TaskStatus.id == task_id))).scalar_one_or_none()
+                if task:
+                    task.progress = "fetching_data"
+                    await db.commit()
+
+                fmp = FMPClient()
+                tickers = fmp.get_candidate_tickers()[:80]
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    await fmp.fetch_and_cache_batch(client, db, tickers)
+
             preferences = await _load_preferences(db)
             await run_screening(
                 db,

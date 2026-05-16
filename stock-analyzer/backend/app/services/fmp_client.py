@@ -1,7 +1,9 @@
-"""Async FMP (Financial Modeling Prep) API client.
+"""Async FMP (Financial Modeling Prep) API client — stable API.
 
 Fetches fundamental stock data, caches it in Postgres via the Stock model,
 and respects the 250 req/day free-tier limit.
+
+Uses the /stable/ API (v3 was deprecated August 2025).
 """
 
 from __future__ import annotations
@@ -11,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,82 +26,63 @@ logger = logging.getLogger(__name__)
 # Rate-limit constants
 # ---------------------------------------------------------------------------
 DAILY_LIMIT = 250
-RATE_WARN_THRESHOLD = 225  # warn when this many requests have been made
+RATE_WARN_THRESHOLD = 225
 STALENESS_HOURS = 24
-FMP_BASE = "https://financialmodelingprep.com/api/v3"
-MAX_BATCH_TICKERS = 10  # FMP batch profile limit
+FMP_BASE = "https://financialmodelingprep.com/stable"
 MAX_RESPONSE_BYTES = 10 * 1024 * 1024  # 10 MB safety cap
 
+# Fields returned as decimals by the stable API that we store as percentages.
+# e.g. 0.33 from API → 33.0 in our DB.
+_DECIMAL_TO_PCT_FIELDS = {
+    "roe", "roa", "roi",
+    "gross_margin", "operating_margin", "net_profit_margin",
+    "dividend_yield",
+}
+
 
 # ---------------------------------------------------------------------------
-# Pydantic response models for FMP API validation
+# Pydantic response models for FMP stable API
 # ---------------------------------------------------------------------------
-class FMPScreenerItem(BaseModel):
-    symbol: str
-    companyName: str | None = None
-    marketCap: float | None = None
-    sector: str | None = None
-    industry: str | None = None
-    price: float | None = None
-
-
 class FMPProfile(BaseModel):
     symbol: str
     companyName: str | None = None
     sector: str | None = None
     industry: str | None = None
-    mktCap: float | None = None
+    marketCap: float | None = None
     price: float | None = None
-
-    # Value metrics available from profile
-    pe: float | None = Field(None, alias="pe")
 
 
 class FMPKeyMetricsTTM(BaseModel):
-    peRatioTTM: float | None = None
-    pegRatioTTM: float | None = None
-    pbRatioTTM: float | None = None
-    priceToSalesRatioTTM: float | None = None
-    priceToCashFlowRatioTTM: float | None = None  # maps to price_to_cash (operating CF)
-    pfcfRatioTTM: float | None = None  # maps to price_to_fcf
     currentRatioTTM: float | None = None
-    quickRatioTTM: float | None = None
-    debtToEquityTTM: float | None = None
-    roeTTM: float | None = None
-    roaTTM: float | None = None
-    returnOnCapitalEmployedTTM: float | None = None  # maps to roi
-    dividendYieldTTM: float | None = None
-    netIncomePerShareTTM: float | None = None
+    returnOnAssetsTTM: float | None = None
+    returnOnEquityTTM: float | None = None
+    returnOnCapitalEmployedTTM: float | None = None
     earningsYieldTTM: float | None = None
 
 
 class FMPRatiosTTM(BaseModel):
-    peRatioTTM: float | None = None
-    pegRatioTTM: float | None = None
-    priceBookValueRatioTTM: float | None = None
+    priceToEarningsRatioTTM: float | None = None
+    priceToEarningsGrowthRatioTTM: float | None = None
+    priceToBookRatioTTM: float | None = None
     priceToSalesRatioTTM: float | None = None
-    priceToFreeCashFlowsRatioTTM: float | None = None
-    priceCashFlowRatioTTM: float | None = None
+    priceToFreeCashFlowRatioTTM: float | None = None
+    priceToOperatingCashFlowRatioTTM: float | None = None
     grossProfitMarginTTM: float | None = None
     operatingProfitMarginTTM: float | None = None
     netProfitMarginTTM: float | None = None
-    returnOnEquityTTM: float | None = None
-    returnOnAssetsTTM: float | None = None
-    returnOnCapitalEmployedTTM: float | None = None
     currentRatioTTM: float | None = None
     quickRatioTTM: float | None = None
-    debtEquityRatioTTM: float | None = None
-    longTermDebtToCapitalizationTTM: float | None = None  # maps to lt_debt_to_equity
+    debtToEquityRatioTTM: float | None = None
+    longTermDebtToCapitalRatioTTM: float | None = None
     dividendYieldTTM: float | None = None
-    dividendYielTTM: float | None = None  # FMP typo in their API
-    priceEarningsToGrowthRatioTTM: float | None = None
+    dividendPerShareTTM: float | None = None
 
 
 # ---------------------------------------------------------------------------
 # FMP Client
 # ---------------------------------------------------------------------------
 class FMPClient:
-    """Async wrapper around the FMP free-tier API."""
+    """Async wrapper around the FMP stable API (free tier)."""
 
     def __init__(self, api_key: str | None = None) -> None:
         self._api_key = api_key or settings.fmp_api_key
@@ -129,12 +112,12 @@ class FMPClient:
             )
 
     async def _get(self, client: httpx.AsyncClient, path: str, params: dict[str, Any] | None = None) -> Any:
-        """Make a GET request to FMP, enforce rate limit, return parsed JSON."""
+        """Make a GET request to FMP stable API, enforce rate limit, return parsed JSON."""
         self._check_rate_limit()
 
         params = params or {}
         params["apikey"] = self._api_key
-        url = f"{FMP_BASE}{path}"
+        url = f"{FMP_BASE}/{path}"
 
         resp = await client.get(url, params=params)
         self._daily_requests += 1
@@ -151,41 +134,55 @@ class FMPClient:
 
     # -- public API wrappers ------------------------------------------------
 
-    async def screen_stocks(
-        self,
-        client: httpx.AsyncClient,
-        market_cap_min: int = 100_000_000,
-        country: str = "US",
-        exchanges: str = "NYSE,NASDAQ,AMEX",
-    ) -> list[FMPScreenerItem]:
-        """Run the FMP stock screener and return matching tickers."""
-        data = await self._get(
-            client,
-            "/stock-screener",
-            params={
-                "marketCapMoreThan": market_cap_min,
-                "country": country,
-                "exchange": exchanges,
-            },
-        )
-        if not isinstance(data, list):
-            return []
-        return [FMPScreenerItem.model_validate(item) for item in data]
+    def get_candidate_tickers(self) -> list[str]:
+        """Return a curated list of US large/mid-cap tickers for screening.
 
-    async def batch_profile(
+        FMP free tier doesn't include discovery endpoints. We maintain a
+        curated universe across all GICS sectors. No API call needed.
+        """
+        return [
+            # Technology
+            "AAPL", "MSFT", "GOOGL", "META", "NVDA", "AVGO", "ADBE", "CRM",
+            "CSCO", "ORCL", "ACN", "INTC", "AMD", "TXN", "QCOM", "IBM",
+            "NOW", "INTU", "AMAT", "MU",
+            # Healthcare
+            "UNH", "JNJ", "LLY", "PFE", "ABBV", "MRK", "TMO", "ABT",
+            "DHR", "BMY", "AMGN", "GILD", "MDT", "SYK", "CI",
+            # Financials
+            "BRK-B", "JPM", "V", "MA", "BAC", "WFC", "GS", "MS",
+            "BLK", "SPGI", "AXP", "C", "SCHW", "CB", "MMC",
+            # Consumer Discretionary
+            "AMZN", "TSLA", "HD", "MCD", "NKE", "SBUX", "LOW", "TJX",
+            "BKNG", "CMG", "ORLY", "ROST", "DHI", "GM", "F",
+            # Consumer Staples
+            "PG", "KO", "PEP", "COST", "WMT", "PM", "MO", "CL",
+            "MDLZ", "GIS", "KHC", "STZ", "KMB", "SJM",
+            # Energy
+            "XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO",
+            "OXY", "HAL",
+            # Industrials
+            "CAT", "HON", "UNP", "UPS", "RTX", "BA", "DE", "LMT",
+            "GE", "MMM", "EMR", "ITW", "WM", "FDX", "NSC",
+            # Materials
+            "LIN", "APD", "SHW", "ECL", "FCX", "NEM", "NUE", "DOW",
+            # Real Estate
+            "PLD", "AMT", "CCI", "EQIX", "SPG", "O", "WELL", "DLR",
+            # Utilities
+            "NEE", "DUK", "SO", "D", "AEP", "SRE", "EXC", "XEL",
+            # Communication Services
+            "GOOG", "DIS", "NFLX", "CMCSA", "T", "VZ", "TMUS", "CHTR",
+        ]
+
+    async def fetch_profile(
         self,
         client: httpx.AsyncClient,
-        tickers: list[str],
-    ) -> list[FMPProfile]:
-        """Fetch profiles for up to MAX_BATCH_TICKERS tickers at once."""
-        if not tickers:
-            return []
-        batch = tickers[:MAX_BATCH_TICKERS]
-        ticker_str = ",".join(batch)
-        data = await self._get(client, f"/profile/{ticker_str}")
-        if not isinstance(data, list):
-            return []
-        return [FMPProfile.model_validate(item) for item in data]
+        ticker: str,
+    ) -> FMPProfile | None:
+        """Fetch company profile for a single ticker."""
+        data = await self._get(client, "profile", params={"symbol": ticker})
+        if not isinstance(data, list) or len(data) == 0:
+            return None
+        return FMPProfile.model_validate(data[0])
 
     async def key_metrics_ttm(
         self,
@@ -193,7 +190,7 @@ class FMPClient:
         ticker: str,
     ) -> FMPKeyMetricsTTM | None:
         """Fetch TTM key metrics for a single ticker."""
-        data = await self._get(client, f"/key-metrics-ttm/{ticker}")
+        data = await self._get(client, "key-metrics-ttm", params={"symbol": ticker})
         if not isinstance(data, list) or len(data) == 0:
             return None
         return FMPKeyMetricsTTM.model_validate(data[0])
@@ -204,12 +201,17 @@ class FMPClient:
         ticker: str,
     ) -> FMPRatiosTTM | None:
         """Fetch TTM ratios for a single ticker."""
-        data = await self._get(client, f"/ratios-ttm/{ticker}")
+        data = await self._get(client, "ratios-ttm", params={"symbol": ticker})
         if not isinstance(data, list) or len(data) == 0:
             return None
         return FMPRatiosTTM.model_validate(data[0])
 
     # -- high-level: merge data into Stock model ----------------------------
+
+    @staticmethod
+    def _pct(value: float | None) -> float | None:
+        """Convert a decimal value to percentage (0.33 → 33.0)."""
+        return round(value * 100, 4) if value is not None else None
 
     def map_to_stock(
         self,
@@ -218,7 +220,7 @@ class FMPClient:
         ratios: FMPRatiosTTM | None,
         ticker: str,
     ) -> dict[str, Any]:
-        """Merge FMP data sources into a dict matching Stock model columns."""
+        """Merge FMP stable API data into a dict matching Stock model columns."""
         now = datetime.now(timezone.utc)
         result: dict[str, Any] = {
             "ticker": ticker,
@@ -231,72 +233,48 @@ class FMPClient:
                     "company_name": profile.companyName,
                     "sector": profile.sector,
                     "industry": profile.industry,
-                    "market_cap": profile.mktCap,
+                    "market_cap": profile.marketCap,
                     "price": profile.price,
                 }
             )
 
+        # Key metrics provides returns (as decimals) and current ratio
         if metrics:
             result.update(
                 {
-                    "pe_ratio": metrics.peRatioTTM,
-                    "peg_ratio": metrics.pegRatioTTM,
-                    "pb_ratio": metrics.pbRatioTTM,
-                    "ps_ratio": metrics.priceToSalesRatioTTM,
-                    "price_to_cash": metrics.priceToCashFlowRatioTTM,
-                    "price_to_fcf": metrics.pfcfRatioTTM,
+                    "roe": self._pct(metrics.returnOnEquityTTM),
+                    "roa": self._pct(metrics.returnOnAssetsTTM),
+                    "roi": self._pct(metrics.returnOnCapitalEmployedTTM),
                     "current_ratio": metrics.currentRatioTTM,
-                    "quick_ratio": metrics.quickRatioTTM,
-                    "debt_to_equity": metrics.debtToEquityTTM,
-                    "roe": metrics.roeTTM,
-                    "roa": metrics.roaTTM,
-                    "roi": metrics.returnOnCapitalEmployedTTM,
-                    "dividend_yield": metrics.dividendYieldTTM,
                 }
             )
 
+        # Ratios provides pricing multiples, margins, and financial health
         if ratios:
-            # Ratios endpoint has margin data and some metrics not in key-metrics
             result.update(
                 {
-                    "gross_margin": ratios.grossProfitMarginTTM,
-                    "operating_margin": ratios.operatingProfitMarginTTM,
-                    "net_profit_margin": ratios.netProfitMarginTTM,
-                    "forward_pe": None,  # FMP free tier doesn't provide forward PE in TTM endpoints
-                    "lt_debt_to_equity": ratios.longTermDebtToCapitalizationTTM,
+                    "pe_ratio": ratios.priceToEarningsRatioTTM,
+                    "peg_ratio": ratios.priceToEarningsGrowthRatioTTM,
+                    "pb_ratio": ratios.priceToBookRatioTTM,
+                    "ps_ratio": ratios.priceToSalesRatioTTM,
+                    "price_to_fcf": ratios.priceToFreeCashFlowRatioTTM,
+                    "price_to_cash": ratios.priceToOperatingCashFlowRatioTTM,
+                    "gross_margin": self._pct(ratios.grossProfitMarginTTM),
+                    "operating_margin": self._pct(ratios.operatingProfitMarginTTM),
+                    "net_profit_margin": self._pct(ratios.netProfitMarginTTM),
+                    "quick_ratio": ratios.quickRatioTTM,
+                    "debt_to_equity": ratios.debtToEquityRatioTTM,
+                    "lt_debt_to_equity": ratios.longTermDebtToCapitalRatioTTM,
+                    "dividend_yield": self._pct(ratios.dividendYieldTTM),
+                    "forward_pe": None,
                 }
             )
 
-            # Fill from ratios if key-metrics didn't have the value
-            if result.get("pe_ratio") is None:
-                result["pe_ratio"] = ratios.peRatioTTM
-            if result.get("peg_ratio") is None:
-                result["peg_ratio"] = ratios.priceEarningsToGrowthRatioTTM
-            if result.get("pb_ratio") is None:
-                result["pb_ratio"] = ratios.priceBookValueRatioTTM
-            if result.get("ps_ratio") is None:
-                result["ps_ratio"] = ratios.priceToSalesRatioTTM
-            if result.get("price_to_fcf") is None:
-                result["price_to_fcf"] = ratios.priceToFreeCashFlowsRatioTTM
-            if result.get("price_to_cash") is None:
-                result["price_to_cash"] = ratios.priceCashFlowRatioTTM
-            if result.get("roe") is None:
-                result["roe"] = ratios.returnOnEquityTTM
-            if result.get("roa") is None:
-                result["roa"] = ratios.returnOnAssetsTTM
-            if result.get("roi") is None:
-                result["roi"] = ratios.returnOnCapitalEmployedTTM
+            # Fill current_ratio from ratios if key-metrics didn't have it
             if result.get("current_ratio") is None:
                 result["current_ratio"] = ratios.currentRatioTTM
-            if result.get("quick_ratio") is None:
-                result["quick_ratio"] = ratios.quickRatioTTM
-            if result.get("debt_to_equity") is None:
-                result["debt_to_equity"] = ratios.debtEquityRatioTTM
-            if result.get("dividend_yield") is None:
-                result["dividend_yield"] = ratios.dividendYieldTTM or ratios.dividendYielTTM
 
-        # Growth metrics are not available in TTM endpoints on the free tier.
-        # They stay None and can be populated by other data sources later.
+        # Growth metrics are not available in TTM endpoints on the free tier
         for growth_field in [
             "eps_growth_this_year",
             "eps_growth_next_year",
@@ -320,7 +298,6 @@ class FMPClient:
         Skips the API call if cached data is less than STALENESS_HOURS old
         (unless force=True).
         """
-        # Check cache freshness
         if not force:
             result = await db.execute(select(Stock).where(Stock.ticker == ticker))
             existing = result.scalar_one_or_none()
@@ -332,9 +309,8 @@ class FMPClient:
                     logger.debug("Cache hit for %s (age=%s)", ticker, age)
                     return existing
 
-        # Fetch from FMP (3 requests per ticker)
-        profile_list = await self.batch_profile(client, [ticker])
-        profile = profile_list[0] if profile_list else None
+        # 3 requests per ticker: profile, key-metrics-ttm, ratios-ttm
+        profile = await self.fetch_profile(client, ticker)
         metrics = await self.key_metrics_ttm(client, ticker)
         ratios = await self.ratios_ttm(client, ticker)
 
