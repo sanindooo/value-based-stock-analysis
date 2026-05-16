@@ -11,8 +11,13 @@ interface MetricDirection {
   range_max: number
 }
 
+interface ThresholdBounds {
+  min: number | null
+  max: number | null
+}
+
 interface ThresholdsResponse {
-  thresholds: Record<string, number>
+  thresholds: Record<string, ThresholdBounds>
   directions: Record<string, MetricDirection>
 }
 
@@ -22,22 +27,26 @@ function getTrafficColor(
   key: string,
   value: number,
   directions: Record<string, MetricDirection>,
-  thresholds: Record<string, number>
+  thresholds: Record<string, ThresholdBounds>
 ): TrafficColor {
   const dir = directions[key]
   if (!dir) return "gray"
 
-  const threshold = thresholds[key]
-  if (threshold === undefined) return "gray"
+  const bounds = thresholds[key]
+  if (!bounds) return "gray"
 
   const range = dir.range_max - dir.range_min
   const nearBuffer = range * 0.2
 
   if (dir.higher_is_better) {
+    const threshold = bounds.min
+    if (threshold == null) return "gray"
     if (value >= threshold) return "green"
     if (value >= threshold - nearBuffer) return "orange"
     return "red"
   } else {
+    const threshold = bounds.max
+    if (threshold == null) return "gray"
     if (value <= threshold) return "green"
     if (value <= threshold + nearBuffer) return "orange"
     return "red"
@@ -128,22 +137,24 @@ export default function ResearchTickerPage() {
     }
   }, [ticker])
 
-  // Fetch screening metrics for the sidebar
+  // Fetch screening metrics for the sidebar — search all completed runs
   const fetchMetrics = useCallback(async () => {
     try {
       const runs = await apiFetch<ScreeningRun[]>("/screening")
-      if (runs.length === 0) return
-      // Use the latest completed run
-      const latestRun = runs.find((r) => r.status === "completed")
-      if (!latestRun) return
-      const data = await apiFetch<ResultsPage>(
-        `/screening/${latestRun.id}?limit=200&offset=0&sort_by=composite_score&order=desc`
+      const completedRuns = runs.filter(
+        (r) => r.status === "completed" && r.result_count > 0
       )
-      const match = data.results.find(
-        (r) => r.stock_ticker.toUpperCase() === ticker
-      )
-      if (match) {
-        setMetrics(match.metric_snapshot)
+      for (const run of completedRuns) {
+        const data = await apiFetch<ResultsPage>(
+          `/screening/${run.id}?limit=200&offset=0&sort_by=composite_score&order=desc`
+        )
+        const match = data.results.find(
+          (r) => r.stock_ticker.toUpperCase() === ticker
+        )
+        if (match) {
+          setMetrics(match.metric_snapshot)
+          return
+        }
       }
     } catch {
       // Non-critical — sidebar just won't show

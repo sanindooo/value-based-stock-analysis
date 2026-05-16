@@ -6,11 +6,13 @@ import { apiFetch } from "@/lib/api";
 import StockCard, { type StockResult } from "@/components/stock-card";
 import StockListRow from "@/components/StockListRow";
 import StockDetailModal from "@/components/StockDetailModal";
-import ViewToggle, { useViewPreference } from "@/components/ViewToggle";
+import ViewToggle from "@/components/ViewToggle";
 import BulkActions from "@/components/bulk-actions";
 import PipelineStatus from "@/components/pipeline-status";
 import ProgressPanel from "@/components/ProgressPanel";
+import { SkeletonCard } from "@/components/Skeleton";
 import { useTaskContext, type ProgressData } from "@/contexts/TaskContext";
+import { METRIC_LABELS } from "@/components/metric-config";
 
 interface TaskStatus {
 	id: number;
@@ -31,12 +33,27 @@ interface ResultsPage {
 interface RunDetails {
 	id: number;
 	created_at: string;
-	settings: Record<string, unknown>;
+	filter_config: Record<string, { min?: number; max?: number }> | null;
 }
 
 const SORT_OPTIONS = [
 	{ value: "composite_score", label: "Composite Score" },
 	{ value: "stock_ticker", label: "Ticker" },
+];
+
+const METRIC_SORT_OPTIONS = [
+	{ value: "pe_ratio", label: "P/E Ratio" },
+	{ value: "roe", label: "ROE" },
+	{ value: "roa", label: "ROA" },
+	{ value: "debt_to_equity", label: "Debt/Equity" },
+	{ value: "current_ratio", label: "Current Ratio" },
+	{ value: "gross_margin", label: "Gross Margin" },
+	{ value: "net_profit_margin", label: "Net Margin" },
+	{ value: "dividend_yield", label: "Dividend Yield" },
+	{ value: "pb_ratio", label: "P/B Ratio" },
+	{ value: "ps_ratio", label: "P/S Ratio" },
+	{ value: "peg_ratio", label: "PEG Ratio" },
+	{ value: "price_to_fcf", label: "Price/FCF" },
 ];
 
 export default function ScreeningResultsPage() {
@@ -62,7 +79,11 @@ export default function ScreeningResultsPage() {
 
 	const { registerTask } = useTaskContext();
 
-	const { view } = useViewPreference("screening-results-view");
+	const [view, setView] = useState<"grid" | "list">(() => {
+		if (typeof window === "undefined") return "grid";
+		const stored = localStorage.getItem("screening-results-view");
+		return stored === "list" ? "list" : "grid";
+	});
 	const [selectedStock, setSelectedStock] = useState<StockResult | null>(null);
 	const [runDetails, setRunDetails] = useState<RunDetails | null>(null);
 
@@ -77,7 +98,9 @@ export default function ScreeningResultsPage() {
 	const [maxScore, setMaxScore] = useState(100);
 
 	const [selected, setSelected] = useState<Set<number>>(new Set());
+	const [tickerSearch, setTickerSearch] = useState("");
 	const [showRejected, setShowRejected] = useState(false);
+	const [showAdvanced, setShowAdvanced] = useState(false);
 	const [researchStatus, setResearchStatus] = useState<
 		Record<number, "loading" | "started" | "failed">
 	>({});
@@ -199,17 +222,31 @@ export default function ScreeningResultsPage() {
 		),
 	).sort();
 
-	const filteredResults = results.filter((r) => {
-		if (!showRejected && r.stage === "rejected") return false;
-		if (
-			sectorFilter &&
-			(r.metric_snapshot?.sector as unknown as string) !== sectorFilter
-		)
-			return false;
-		if (r.composite_score < minScore || r.composite_score > maxScore)
-			return false;
-		return true;
-	});
+	const isMetricSort = METRIC_SORT_OPTIONS.some((o) => o.value === sortBy);
+
+	const filteredResults = results
+		.filter((r) => {
+			if (!showRejected && r.stage === "rejected") return false;
+			if (
+				sectorFilter &&
+				(r.metric_snapshot?.sector as unknown as string) !== sectorFilter
+			)
+				return false;
+			if (r.composite_score < minScore || r.composite_score > maxScore)
+				return false;
+			if (tickerSearch && !r.stock_ticker.toLowerCase().includes(tickerSearch.toLowerCase()))
+				return false;
+			return true;
+		})
+		.sort((a, b) => {
+			if (!isMetricSort) return 0;
+			const aVal = (a.metric_snapshot?.[sortBy] as number) ?? null;
+			const bVal = (b.metric_snapshot?.[sortBy] as number) ?? null;
+			if (aVal === null && bVal === null) return 0;
+			if (aVal === null) return 1;
+			if (bVal === null) return -1;
+			return order === "asc" ? aVal - bVal : bVal - aVal;
+		});
 
 	const stageCounts = {
 		screened: results.filter((r) => r.stage === "screened").length,
@@ -386,8 +423,11 @@ export default function ScreeningResultsPage() {
 
 	if (loading) {
 		return (
-			<div className="flex items-center justify-center py-20">
-				<div className="text-sm text-gray-500">Loading results...</div>
+			<div className="grid grid-cols-1 gap-4 pt-12 md:grid-cols-2">
+				<SkeletonCard />
+				<SkeletonCard />
+				<SkeletonCard />
+				<SkeletonCard />
 			</div>
 		);
 	}
@@ -428,19 +468,25 @@ export default function ScreeningResultsPage() {
 			</div>
 
 			{/* Run settings header */}
-			{runDetails?.settings && Object.keys(runDetails.settings).length > 0 && (
+			{runDetails?.filter_config && Object.keys(runDetails.filter_config).length > 0 && (
 				<div className="mb-6 rounded-xl border border-gray-200 bg-white px-5 py-3">
-					<p className="mb-2 text-xs font-medium text-gray-500">Run Settings</p>
-					<div className="flex flex-wrap gap-3">
-						{Object.entries(runDetails.settings).map(([key, value]) => (
-							<span
-								key={key}
-								className="inline-flex items-center gap-1.5 rounded-lg bg-gray-50 px-2.5 py-1 text-xs text-gray-700"
-							>
-								<span className="font-medium">{key.replace(/_/g, " ")}:</span>
-								<span className="tabular-nums">{String(value)}</span>
-							</span>
-						))}
+					<p className="mb-2 text-xs font-medium text-gray-500">Thresholds used for this run</p>
+					<div className="flex flex-wrap gap-2">
+						{Object.entries(runDetails.filter_config).map(([key, cfg]) => {
+							const label = METRIC_LABELS[key] || key.replace(/_/g, " ");
+							const parts: string[] = [];
+							if (cfg.min != null) parts.push(`min ${cfg.min}`);
+							if (cfg.max != null) parts.push(`max ${cfg.max}`);
+							return (
+								<span
+									key={key}
+									className="inline-flex items-center gap-1 rounded-md bg-gray-50 px-2 py-1 text-xs text-gray-600"
+								>
+									<span className="font-medium">{label}:</span>
+									{parts.join(", ")}
+								</span>
+							);
+						})}
 					</div>
 				</div>
 			)}
@@ -451,102 +497,158 @@ export default function ScreeningResultsPage() {
 			</div>
 
 			{/* Controls */}
-			<div className="mb-6 flex flex-wrap items-center gap-4 rounded-xl border border-gray-200 bg-white px-5 py-3">
-				{/* Sort */}
-				<div className="flex items-center gap-2">
-					<label
-						htmlFor="sort-by"
-						className="text-xs font-medium text-gray-500"
-					>
-						Sort by
-					</label>
-					<select
-						id="sort-by"
-						value={sortBy}
-						onChange={(e) => setSortBy(e.target.value)}
-						className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700"
-					>
-						{SORT_OPTIONS.map((opt) => (
-							<option key={opt.value} value={opt.value}>
-								{opt.label}
-							</option>
-						))}
-					</select>
+			<div className="mb-6 rounded-xl border border-gray-200 bg-white">
+				<div className="flex flex-wrap items-center gap-4 px-5 py-3">
+					{/* Ticker search */}
+					<input
+						type="text"
+						placeholder="Search ticker..."
+						value={tickerSearch}
+						onChange={(e) => setTickerSearch(e.target.value)}
+						className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-gray-400 focus:outline-none"
+					/>
+
+					{/* Sort */}
+					<div className="flex items-center gap-2">
+						<label
+							htmlFor="sort-by"
+							className="text-xs font-medium text-gray-500"
+						>
+							Sort by
+						</label>
+						<select
+							id="sort-by"
+							value={sortBy}
+							onChange={(e) => setSortBy(e.target.value)}
+							className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700"
+						>
+							{SORT_OPTIONS.map((opt) => (
+								<option key={opt.value} value={opt.value}>
+									{opt.label}
+								</option>
+							))}
+						</select>
+						<button
+							onClick={() => setOrder((o) => (o === "asc" ? "desc" : "asc"))}
+							className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+							aria-label={`Sort ${order === "asc" ? "ascending" : "descending"}`}
+						>
+							{order === "asc" ? "↑ Asc" : "↓ Desc"}
+						</button>
+					</div>
+
+					{/* Advanced toggle */}
 					<button
-						onClick={() => setOrder((o) => (o === "asc" ? "desc" : "asc"))}
-						className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
-						aria-label={`Sort ${order === "asc" ? "ascending" : "descending"}`}
+						onClick={() => setShowAdvanced((v) => !v)}
+						className={`flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+							showAdvanced
+								? "border-blue-200 bg-blue-50 text-blue-700"
+								: "border-gray-200 text-gray-500 hover:text-gray-700"
+						}`}
 					>
-						{order === "asc" ? "↑ Asc" : "↓ Desc"}
+						<svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+							<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+						</svg>
+						Advanced
 					</button>
-				</div>
 
-				{/* Sector filter */}
-				<div className="flex items-center gap-2">
-					<label
-						htmlFor="sector-filter"
-						className="text-xs font-medium text-gray-500"
-					>
-						Sector
-					</label>
-					<select
-						id="sector-filter"
-						value={sectorFilter}
-						onChange={(e) => setSectorFilter(e.target.value)}
-						className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700"
-					>
-						<option value="">All sectors</option>
-						{sectors.map((s) => (
-							<option key={s} value={s}>
-								{s}
-							</option>
-						))}
-					</select>
-				</div>
-
-				{/* Score range */}
-				<div className="flex items-center gap-2">
-					<label className="text-xs font-medium text-gray-500">Score</label>
-					<input
-						type="number"
-						min={0}
-						max={100}
-						value={minScore}
-						onChange={(e) => setMinScore(Number(e.target.value))}
-						className="w-16 rounded-lg border border-gray-200 px-2 py-1.5 text-sm tabular-nums text-gray-700"
-						aria-label="Minimum score"
-					/>
-					<span className="text-xs text-gray-400">to</span>
-					<input
-						type="number"
-						min={0}
-						max={100}
-						value={maxScore}
-						onChange={(e) => setMaxScore(Number(e.target.value))}
-						className="w-16 rounded-lg border border-gray-200 px-2 py-1.5 text-sm tabular-nums text-gray-700"
-						aria-label="Maximum score"
-					/>
-				</div>
-
-				{/* View toggle / Select all / Show rejected */}
-				<div className="ml-auto flex items-center gap-4">
-					<ViewToggle storageKey="screening-results-view" />
-					<label className="flex items-center gap-2 text-sm text-gray-600">
-						<input
-							type="checkbox"
-							checked={showRejected}
-							onChange={() => setShowRejected((v) => !v)}
-							className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-						/>
-						Show rejected
-					</label>
-					<button
-						onClick={toggleSelectAll}
-						className="text-sm font-medium text-blue-600 hover:text-blue-700"
-					>
+					{/* View toggle / Select all / Show rejected */}
+					<div className="ml-auto flex items-center gap-4">
+						<ViewToggle storageKey="screening-results-view" onChange={setView} />
+						<label className="flex items-center gap-2 text-sm text-gray-600">
+							<input
+								type="checkbox"
+								checked={showRejected}
+								onChange={() => setShowRejected((v) => !v)}
+								className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+							/>
+							Show rejected
+						</label>
+						<button
+							onClick={toggleSelectAll}
+							className="text-sm font-medium text-blue-600 hover:text-blue-700"
+						>
 						{allVisibleSelected ? "Deselect all" : "Select all"}
 					</button>
 				</div>
+				</div>
+
+				{/* Advanced filters */}
+				{showAdvanced && (
+					<div className="border-t border-gray-100 px-5 py-3">
+						<div className="flex flex-wrap items-center gap-4">
+							{/* Sort by metric */}
+							<div className="flex items-center gap-2">
+								<label htmlFor="metric-sort" className="text-xs font-medium text-gray-500">
+									Sort by metric
+								</label>
+								<select
+									id="metric-sort"
+									value={isMetricSort ? sortBy : ""}
+									onChange={(e) => {
+										if (e.target.value) {
+											setSortBy(e.target.value);
+										} else {
+											setSortBy("composite_score");
+										}
+									}}
+									className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700"
+								>
+									<option value="">None</option>
+									{METRIC_SORT_OPTIONS.map((opt) => (
+										<option key={opt.value} value={opt.value}>
+											{opt.label}
+										</option>
+									))}
+								</select>
+							</div>
+
+							{/* Sector filter */}
+							<div className="flex items-center gap-2">
+								<label htmlFor="sector-filter" className="text-xs font-medium text-gray-500">
+									Sector
+								</label>
+								<select
+									id="sector-filter"
+									value={sectorFilter}
+									onChange={(e) => setSectorFilter(e.target.value)}
+									className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700"
+								>
+									<option value="">All sectors</option>
+									{sectors.map((s) => (
+										<option key={s} value={s}>
+											{s}
+										</option>
+									))}
+								</select>
+							</div>
+
+							{/* Score range */}
+							<div className="flex items-center gap-2">
+								<label className="text-xs font-medium text-gray-500">Score</label>
+								<input
+									type="number"
+									min={0}
+									max={100}
+									value={minScore}
+									onChange={(e) => setMinScore(Number(e.target.value))}
+									className="w-16 rounded-lg border border-gray-200 px-2 py-1.5 text-sm tabular-nums text-gray-700"
+									aria-label="Minimum score"
+								/>
+								<span className="text-xs text-gray-400">to</span>
+								<input
+									type="number"
+									min={0}
+									max={100}
+									value={maxScore}
+									onChange={(e) => setMaxScore(Number(e.target.value))}
+									className="w-16 rounded-lg border border-gray-200 px-2 py-1.5 text-sm tabular-nums text-gray-700"
+									aria-label="Maximum score"
+								/>
+							</div>
+						</div>
+					</div>
+				)}
 			</div>
 
 			{/* Results */}

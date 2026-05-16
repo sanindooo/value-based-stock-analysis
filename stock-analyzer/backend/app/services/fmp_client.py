@@ -391,9 +391,14 @@ class FMPClient:
     ) -> list[Stock]:
         """Fetch and cache tickers with concurrency limited by semaphore.
 
+        Each ticker gets its own DB session to avoid concurrent session access
+        from asyncio.gather.
+
         Args:
             cancel_check: optional async callable returning True if cancelled.
         """
+        from app.db import async_session
+
         results: list[Stock] = []
         rate_limited = False
 
@@ -405,7 +410,9 @@ class FMPClient:
                 if rate_limited:
                     return None
                 try:
-                    return await self.fetch_and_cache_ticker(client, db, ticker, force=force)
+                    async with async_session() as ticker_db:
+                        stock = await self.fetch_and_cache_ticker(client, ticker_db, ticker, force=force)
+                        return stock
                 except RateLimitExceeded:
                     rate_limited = True
                     logger.error("Rate limit hit during batch at %s", ticker)

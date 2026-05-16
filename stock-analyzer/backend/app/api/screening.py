@@ -26,6 +26,7 @@ from app.schemas.screening import (
 )
 from app.services.fmp_client import FMPClient, RateLimitExceeded
 from app.services.screener import run_screening
+from app.services.yahoo_client import fetch_and_cache_yahoo_batch
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -55,21 +56,17 @@ async def _run_screening_task(
     max_matches: int | None = None,
 ) -> None:
     """Background task wrapper — fetches FMP data if cache is empty, then screens."""
-    async with async_session() as db:
-        try:
-            # Check if we have cached stock data
-            count = (await db.execute(select(func.count()).select_from(Stock))).scalar() or 0
-            if count == 0:
-                # Populate cache from FMP screener
-                task = (await db.execute(select(TaskStatus).where(TaskStatus.id == task_id))).scalar_one_or_none()
-                if task:
-                    task.progress = "fetching_data"
-                    await db.commit()
+    failed = False
+    try:
+        async with async_session() as db:
+            task = (await db.execute(select(TaskStatus).where(TaskStatus.id == task_id))).scalar_one_or_none()
+            if task:
+                task.progress = "fetching_data"
+                await db.commit()
 
-                fmp = FMPClient()
-                tickers = fmp.get_candidate_tickers()[:80]
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    await fmp.fetch_and_cache_batch(client, db, tickers)
+            fmp = FMPClient()
+            tickers = fmp.get_candidate_tickers()[:80]
+            await fetch_and_cache_yahoo_batch(db, tickers)
 
             preferences = await _load_preferences(db)
             await run_screening(
@@ -80,25 +77,30 @@ async def _run_screening_task(
                 max_examined=max_examined,
                 max_matches=max_matches,
             )
-        except Exception:
-            logger.exception("Screening task %d failed", task_id)
-            # Mark task as failed
-            result = await db.execute(
-                select(TaskStatus).where(TaskStatus.id == task_id)
-            )
-            task = result.scalar_one_or_none()
-            if task:
-                task.status = "failed"
-                task.error_message = "Screening failed — check server logs."
-            # Also mark the run if it exists
-            if task and task.result_id:
-                run_result = await db.execute(
-                    select(ScreeningRun).where(ScreeningRun.id == task.result_id)
+    except Exception:
+        logger.exception("Screening task %d failed", task_id)
+        failed = True
+
+    if failed:
+        try:
+            async with async_session() as err_db:
+                result = await err_db.execute(
+                    select(TaskStatus).where(TaskStatus.id == task_id)
                 )
-                run = run_result.scalar_one_or_none()
-                if run:
-                    run.status = "failed"
-            await db.commit()
+                task = result.scalar_one_or_none()
+                if task and task.status not in ("completed", "cancelled"):
+                    task.status = "failed"
+                    task.error_message = "Screening failed — check server logs."
+                    if task.result_id:
+                        run_result = await err_db.execute(
+                            select(ScreeningRun).where(ScreeningRun.id == task.result_id)
+                        )
+                        run = run_result.scalar_one_or_none()
+                        if run:
+                            run.status = "failed"
+                    await err_db.commit()
+        except Exception:
+            logger.exception("Failed to mark task %d as failed", task_id)
 
 
 # ---------------------------------------------------------------------------
@@ -260,10 +262,6 @@ async def get_screening_run(run_id: int, db: AsyncSession = Depends(get_db)):
         .where(ScreeningRun.id == run_id)
         .group_by(
             ScreeningRun.id,
-            ScreeningRun.created_at,
-            ScreeningRun.status,
-            ScreeningRun.filter_config,
-            ScreeningRun.task_id,
         )
     )
     row = (await db.execute(stmt)).one_or_none()
@@ -318,6 +316,7 @@ async def delete_screening_run(run_id: int, db: AsyncSession = Depends(get_db)):
 @router.get("/runs", response_model=list[ScreeningRunOut])
 async def list_screening_runs(db: AsyncSession = Depends(get_db)):
     """List all past screening runs with result counts."""
+    from sqlalchemy import cast, String
     stmt = (
         select(
             ScreeningRun.id,
@@ -330,10 +329,6 @@ async def list_screening_runs(db: AsyncSession = Depends(get_db)):
         .outerjoin(ScreeningResult, ScreeningResult.screening_run_id == ScreeningRun.id)
         .group_by(
             ScreeningRun.id,
-            ScreeningRun.created_at,
-            ScreeningRun.status,
-            ScreeningRun.filter_config,
-            ScreeningRun.task_id,
         )
         .order_by(ScreeningRun.created_at.desc())
     )

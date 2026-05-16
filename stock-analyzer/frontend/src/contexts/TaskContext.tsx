@@ -25,12 +25,14 @@ interface TaskContextValue {
   tasks: Map<number, TaskState>
   registerTask: (taskId: number) => void
   activeScreeningTask: TaskState | null
+  lastCompletedTask: TaskState | null
 }
 
 const TaskContext = createContext<TaskContextValue>({
   tasks: new Map(),
   registerTask: () => {},
   activeScreeningTask: null,
+  lastCompletedTask: null,
 })
 
 export function useTaskContext() {
@@ -115,7 +117,7 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     async function recover() {
       try {
-        const active = await apiFetch<TaskApiResponse[]>("/screening/tasks?status=running,pending")
+        const active = await apiFetch<TaskApiResponse[]>("/screening/tasks?status=running,pending,cancelling")
         for (const task of active) {
           registerTask(task.id)
         }
@@ -137,8 +139,12 @@ export function TaskProvider({ children }: { children: React.ReactNode }) {
     (t) => t.status === "running" || t.status === "pending" || t.status === "cancelling"
   ) ?? null
 
+  const lastCompletedTask = Array.from(tasks.values()).find(
+    (t) => t.status === "completed" || t.status === "failed" || t.status === "cancelled"
+  ) ?? null
+
   return (
-    <TaskContext.Provider value={{ tasks, registerTask, activeScreeningTask }}>
+    <TaskContext.Provider value={{ tasks, registerTask, activeScreeningTask, lastCompletedTask }}>
       {children}
     </TaskContext.Provider>
   )

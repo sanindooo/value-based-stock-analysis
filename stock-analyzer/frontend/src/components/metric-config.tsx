@@ -12,15 +12,26 @@ interface MetricConfigProps {
   onChange: (overrides: Record<string, MetricThreshold>) => void
 }
 
-const METRIC_LABELS: Record<string, string> = {
+export const METRIC_LABELS: Record<string, string> = {
   pe_ratio: "P/E Ratio",
   peg_ratio: "PEG Ratio",
   pb_ratio: "P/B Ratio",
+  ps_ratio: "P/S Ratio",
+  price_to_fcf: "Price to Free Cash Flow",
   roe: "Return on Equity (%)",
+  roa: "Return on Assets (%)",
   current_ratio: "Current Ratio",
   debt_to_equity: "Debt to Equity",
+  debt_to_ebitda: "Debt to EBITDA",
   gross_margin: "Gross Margin (%)",
+  net_profit_margin: "Net Profit Margin (%)",
   dividend_yield: "Dividend Yield (%)",
+  dividend_payout: "Dividend Payout (%)",
+  beta: "Beta",
+  book_value_per_share: "Book Value per Share",
+  projected_earnings_growth: "Projected Earnings Growth (%)",
+  analyst_rating: "Analyst Rating (1-5)",
+  trading_range_12m: "12-Month Trading Range (%)",
 }
 
 export default function MetricConfig({

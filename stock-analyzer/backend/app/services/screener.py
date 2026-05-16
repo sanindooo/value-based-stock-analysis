@@ -25,25 +25,25 @@ logger = logging.getLogger(__name__)
 # Default Buffett-style thresholds
 # ---------------------------------------------------------------------------
 DEFAULT_THRESHOLDS: dict[str, dict[str, float | None]] = {
-    "pe_ratio": {"min": None, "max": 20},
-    "peg_ratio": {"min": None, "max": 1.5},
-    "pb_ratio": {"min": None, "max": 3},
-    "ps_ratio": {"min": None, "max": 5},
-    "price_to_fcf": {"min": None, "max": 20},
-    "roe": {"min": 15, "max": None},
-    "roa": {"min": 5, "max": None},
-    "current_ratio": {"min": 1.5, "max": None},
-    "debt_to_equity": {"min": None, "max": 1.0},
-    "debt_to_ebitda": {"min": None, "max": 3.0},
-    "gross_margin": {"min": 30, "max": None},
-    "net_profit_margin": {"min": 10, "max": None},
-    "dividend_yield": {"min": 1, "max": None},
-    "dividend_payout": {"min": None, "max": 60},
-    "beta": {"min": None, "max": 1.5},
-    "book_value_per_share": {"min": 10, "max": None},
-    "projected_earnings_growth": {"min": 5, "max": None},
-    "analyst_rating": {"min": 3, "max": None},
-    "trading_range_12m": {"min": None, "max": 50},
+    "pe_ratio": {"min": None, "max": 30},
+    "peg_ratio": {"min": None, "max": 2.0},
+    "pb_ratio": {"min": None, "max": 5},
+    "ps_ratio": {"min": None, "max": 8},
+    "price_to_fcf": {"min": None, "max": 30},
+    "roe": {"min": 12, "max": None},
+    "roa": {"min": 4, "max": None},
+    "current_ratio": {"min": 1.0, "max": None},
+    "debt_to_equity": {"min": None, "max": 1.5},
+    "debt_to_ebitda": {"min": None, "max": 4.0},
+    "gross_margin": {"min": 25, "max": None},
+    "net_profit_margin": {"min": 8, "max": None},
+    "dividend_yield": {"min": None, "max": None},
+    "dividend_payout": {"min": None, "max": 75},
+    "beta": {"min": None, "max": 2.0},
+    "book_value_per_share": {"min": None, "max": None},
+    "projected_earnings_growth": {"min": None, "max": None},
+    "analyst_rating": {"min": None, "max": None},
+    "trading_range_12m": {"min": None, "max": None},
 }
 
 # Metrics where we store the "all metrics" list from the Stock model
@@ -86,14 +86,23 @@ def _extract_metrics(stock: Stock) -> dict[str, Any]:
     }
 
 
+_CORE_METRICS = {"pe_ratio", "roe", "debt_to_equity", "gross_margin", "current_ratio"}
+_MIN_CORE_REQUIRED = 3
+
+
 def _passes_thresholds(
     metrics: dict[str, Any],
     thresholds: dict[str, dict[str, float | None]],
 ) -> bool:
     """Check if a stock's metrics pass ALL threshold criteria.
 
-    If a metric value is None, that filter is skipped (not rejected).
+    Stocks must have at least 3 of the 5 core metrics populated.
+    If a non-core metric value is None, that filter is skipped.
     """
+    core_present = sum(1 for m in _CORE_METRICS if metrics.get(m) is not None)
+    if core_present < _MIN_CORE_REQUIRED:
+        return False
+
     for metric, bounds in thresholds.items():
         value = metrics.get(metric)
         if value is None:
@@ -334,6 +343,9 @@ async def run_screening(
         summary = _generate_summary(metrics, conviction, composite, thresholds)
 
         snapshot = dict(metrics)
+        snapshot["company_name"] = stock.company_name
+        snapshot["sector"] = stock.sector
+        snapshot["website"] = stock.website
         if stock.data_warnings:
             snapshot["data_warnings"] = stock.data_warnings
 

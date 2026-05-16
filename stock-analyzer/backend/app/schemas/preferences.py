@@ -5,11 +5,22 @@ DEFAULT_METRIC_THRESHOLDS: dict[str, dict[str, float | None]] = {
     "pe_ratio": {"min": None, "max": 20},
     "peg_ratio": {"min": None, "max": 1.5},
     "pb_ratio": {"min": None, "max": 3},
+    "ps_ratio": {"min": None, "max": 5},
+    "price_to_fcf": {"min": None, "max": 20},
     "roe": {"min": 15, "max": None},
+    "roa": {"min": 5, "max": None},
     "current_ratio": {"min": 1.5, "max": None},
     "debt_to_equity": {"min": None, "max": 1.0},
+    "debt_to_ebitda": {"min": None, "max": 3.0},
     "gross_margin": {"min": 30, "max": None},
+    "net_profit_margin": {"min": 10, "max": None},
     "dividend_yield": {"min": 1, "max": None},
+    "dividend_payout": {"min": None, "max": 60},
+    "beta": {"min": None, "max": 1.5},
+    "book_value_per_share": {"min": 10, "max": None},
+    "projected_earnings_growth": {"min": 5, "max": None},
+    "analyst_rating": {"min": 3, "max": None},
+    "trading_range_12m": {"min": None, "max": 50},
 }
 
 DEFAULT_CATEGORY_WEIGHTS: dict[str, int] = {

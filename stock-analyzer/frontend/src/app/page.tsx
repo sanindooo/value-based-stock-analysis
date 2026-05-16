@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import { apiFetch } from "@/lib/api"
 import PipelineView from "@/components/pipeline-view"
 import OpinionBadge from "@/components/opinion-badge"
+import { SkeletonCard, SkeletonRunCard } from "@/components/Skeleton"
 
 interface Preferences {
   min_market_cap: number | null
@@ -143,8 +144,12 @@ export default function Dashboard() {
 
   if (state === "loading") {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="text-sm text-gray-500">Loading dashboard...</div>
+      <div className="mx-auto max-w-4xl space-y-4 pt-12">
+        <SkeletonRunCard />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
       </div>
     )
   }

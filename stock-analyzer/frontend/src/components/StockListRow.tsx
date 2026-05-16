@@ -21,6 +21,19 @@ function scoreColor(score: number): string {
   return "text-red-700 bg-red-50"
 }
 
+const KEY_METRICS: { key: string; label: string; suffix?: string }[] = [
+  { key: "pe_ratio", label: "P/E" },
+  { key: "roe", label: "ROE", suffix: "%" },
+  { key: "debt_to_equity", label: "D/E" },
+  { key: "gross_margin", label: "GM", suffix: "%" },
+  { key: "dividend_yield", label: "Div", suffix: "%" },
+]
+
+function formatMetric(val: unknown, suffix?: string): string {
+  if (typeof val !== "number") return "--"
+  return `${val.toFixed(1)}${suffix || ""}`
+}
+
 export default function StockListRow({ stock, onClick }: StockListRowProps) {
   const metrics = stock.metric_snapshot || {}
   const companyName = metrics.company_name as string | undefined
@@ -36,8 +49,8 @@ export default function StockListRow({ stock, onClick }: StockListRowProps) {
         isExceptional ? "border-b-amber-400" : "border-b-gray-100"
       }`}
     >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+      <div className="min-w-0 flex-shrink-0 w-28">
+        <div className="flex items-center gap-1.5">
           <span className="font-semibold text-gray-900">{stock.stock_ticker}</span>
           {isExceptional && (
             <span className="text-amber-500" title="Exceptional score">★</span>
@@ -49,14 +62,36 @@ export default function StockListRow({ stock, onClick }: StockListRowProps) {
               </svg>
             </span>
           )}
-          {companyName && (
-            <span className="truncate text-sm text-gray-500">{companyName}</span>
-          )}
         </div>
-        {sector && (
+        {companyName ? (
+          <span className="block truncate text-xs text-gray-500">{companyName}</span>
+        ) : sector ? (
           <span className="text-xs text-gray-400">{sector}</span>
-        )}
+        ) : null}
       </div>
+
+      <div className="hidden flex-1 items-center gap-4 sm:flex">
+        {KEY_METRICS.map(({ key, label, suffix }) => (
+          <div key={key} className="text-center">
+            <span className="block text-xs text-gray-400">{label}</span>
+            <span className="text-sm tabular-nums text-gray-700">
+              {formatMetric(metrics[key], suffix)}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {stock.stage && (
+        <span className={`hidden shrink-0 rounded-full px-2 py-0.5 text-xs font-medium sm:inline-block ${
+          stock.stage === "researched" ? "bg-green-50 text-green-700" :
+          stock.stage === "researching" ? "bg-blue-50 text-blue-700" :
+          stock.stage === "rejected" ? "bg-red-50 text-red-700" :
+          "bg-gray-100 text-gray-600"
+        }`}>
+          {stock.stage}
+        </span>
+      )}
+
       <div
         className={`flex h-8 w-10 shrink-0 items-center justify-center rounded-md text-sm font-bold tabular-nums ${scoreColor(stock.composite_score)}`}
       >

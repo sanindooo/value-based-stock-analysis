@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import { toast } from "sonner"
 import SectorSelector from "@/components/sector-selector"
 import MetricConfig from "@/components/metric-config"
 import { apiFetch } from "@/lib/api"
@@ -40,7 +41,6 @@ const WEIGHT_LABELS: Record<string, string> = {
 export default function SettingsPage() {
   const [prefs, setPrefs] = useState<Preferences | null>(null)
   const [saving, setSaving] = useState(false)
-  const [toast, setToast] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
@@ -48,7 +48,7 @@ export default function SettingsPage() {
       const data = await apiFetch<Preferences>("/preferences")
       setPrefs(data)
     } catch {
-      setToast("Failed to load preferences")
+      toast.error("Failed to load preferences")
     } finally {
       setLoading(false)
     }
@@ -57,13 +57,6 @@ export default function SettingsPage() {
   useEffect(() => {
     load()
   }, [load])
-
-  useEffect(() => {
-    if (toast) {
-      const timer = setTimeout(() => setToast(null), 3000)
-      return () => clearTimeout(timer)
-    }
-  }, [toast])
 
   async function save() {
     if (!prefs) return
@@ -74,9 +67,9 @@ export default function SettingsPage() {
         body: JSON.stringify(prefs),
       })
       setPrefs(data)
-      setToast("Preferences saved")
+      toast.success("Preferences saved")
     } catch {
-      setToast("Failed to save preferences")
+      toast.error("Failed to save preferences")
     } finally {
       setSaving(false)
     }
@@ -256,15 +249,6 @@ export default function SettingsPage() {
 
         {/* Save */}
         <div className="flex items-center justify-end gap-4 pb-8">
-          {toast && (
-            <span
-              className={`text-sm font-medium ${
-                toast.includes("Failed") ? "text-red-600" : "text-green-600"
-              }`}
-            >
-              {toast}
-            </span>
-          )}
           <button
             onClick={save}
             disabled={saving}

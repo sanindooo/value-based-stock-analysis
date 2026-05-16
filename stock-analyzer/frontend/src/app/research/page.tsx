@@ -1,10 +1,12 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { toast } from "sonner"
 import { apiFetch } from "@/lib/api"
 import OpinionBadge from "@/components/opinion-badge"
 import ProgressPanel from "@/components/ProgressPanel"
-import ViewToggle, { useViewPreference } from "@/components/ViewToggle"
+import ViewToggle from "@/components/ViewToggle"
+import { SkeletonCard } from "@/components/Skeleton"
 
 interface ReportSummary {
   id: number
@@ -25,17 +27,24 @@ export default function ResearchPage() {
   const [reports, setReports] = useState<ReportSummary[]>([])
   const [activeTasks, setActiveTasks] = useState<ActiveTask[]>([])
   const [loading, setLoading] = useState(true)
-  const [toast, setToast] = useState<string | null>(null)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Research ticker overlay
+  const [showResearchOverlay, setShowResearchOverlay] = useState(false)
+  const [researchTicker, setResearchTicker] = useState("")
+  const [submittingResearch, setSubmittingResearch] = useState(false)
 
   // Filters
   const [tickerSearch, setTickerSearch] = useState("")
   const [recommendation, setRecommendation] = useState("")
   const [confidence, setConfidence] = useState("")
   const [deduplicated, setDeduplicated] = useState(true)
+  const [view, setView] = useState<"grid" | "list">(() => {
+    if (typeof window === "undefined") return "grid"
+    const stored = localStorage.getItem("research-view")
+    return stored === "list" ? "list" : "grid"
+  })
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const { view } = useViewPreference("research-view")
 
   const buildQuery = useCallback(() => {
     const params = new URLSearchParams()
@@ -52,7 +61,7 @@ export default function ResearchPage() {
       const data = await apiFetch<ReportSummary[]>(`/research${buildQuery()}`)
       setReports(data)
     } catch {
-      setToast("Failed to load research reports")
+      toast.error("Failed to load research reports")
     } finally {
       setLoading(false)
     }
@@ -104,12 +113,36 @@ export default function ResearchPage() {
     }
   }, [activeTasks.length, loadActive, loadReports])
 
-  useEffect(() => {
-    if (toast) {
-      const timer = setTimeout(() => setToast(null), 3000)
-      return () => clearTimeout(timer)
+
+  async function submitResearch() {
+    const ticker = researchTicker.trim().toUpperCase()
+    if (!ticker) return
+    setSubmittingResearch(true)
+    try {
+      await apiFetch("/research", {
+        method: "POST",
+        body: JSON.stringify({ stock_tickers: [ticker] }),
+      })
+      setActiveTasks((prev) => [
+        ...prev,
+        { id: Date.now(), status: "pending", progress: "queued", description: ticker },
+      ])
+      toast.success(`Research started for ${ticker}`)
+      setShowResearchOverlay(false)
+      setResearchTicker("")
+      loadActive()
+      if (!pollingRef.current) {
+        pollingRef.current = setInterval(() => {
+          loadActive()
+          loadReports()
+        }, 3000)
+      }
+    } catch {
+      toast.error("Failed to start research")
+    } finally {
+      setSubmittingResearch(false)
     }
-  }, [toast])
+  }
 
   function formatDate(iso: string): string {
     return new Date(iso).toLocaleDateString("en-US", {
@@ -121,10 +154,11 @@ export default function ResearchPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="text-sm text-gray-500">
-          Loading research reports...
-        </div>
+      <div className="mx-auto max-w-4xl grid grid-cols-1 gap-4 pt-12 sm:grid-cols-2">
+        <SkeletonCard />
+        <SkeletonCard />
+        <SkeletonCard />
+        <SkeletonCard />
       </div>
     )
   }
@@ -140,18 +174,58 @@ export default function ResearchPage() {
             Deep-dive research reports with investment opinions and source links.
           </p>
         </div>
-        <ViewToggle storageKey="research-view" />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowResearchOverlay(true)}
+            className="rounded-lg border border-gray-200 p-2 text-gray-500 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-700"
+            title="Research a specific ticker"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </button>
+          <ViewToggle storageKey="research-view" onChange={setView} />
+        </div>
       </div>
 
-      {toast && (
-        <div
-          className={`mb-4 rounded-lg px-4 py-2 text-sm font-medium ${
-            toast.includes("Failed")
-              ? "bg-red-50 text-red-600"
-              : "bg-green-50 text-green-600"
-          }`}
-        >
-          {toast}
+      {/* Research ticker overlay */}
+      {showResearchOverlay && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-32">
+          <div
+            className="fixed inset-0 bg-black/30"
+            onClick={() => setShowResearchOverlay(false)}
+          />
+          <div className="relative w-full max-w-md rounded-xl border border-gray-200 bg-white p-6 shadow-xl">
+            <h3 className="mb-1 text-base font-semibold text-gray-900">
+              Research a Stock
+            </h3>
+            <p className="mb-4 text-sm text-gray-500">
+              Enter a ticker symbol to start a deep-dive analysis.
+            </p>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                submitResearch()
+              }}
+              className="flex gap-2"
+            >
+              <input
+                type="text"
+                value={researchTicker}
+                onChange={(e) => setResearchTicker(e.target.value.toUpperCase())}
+                placeholder="e.g. AAPL"
+                autoFocus
+                className="flex-1 rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium uppercase placeholder-gray-400 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+              <button
+                type="submit"
+                disabled={!researchTicker.trim() || submittingResearch}
+                className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+              >
+                {submittingResearch ? "Starting..." : "Research"}
+              </button>
+            </form>
+          </div>
         </div>
       )}
 
