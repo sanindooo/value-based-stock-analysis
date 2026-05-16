@@ -38,6 +38,12 @@ export default function RootLayout({
                   Research
                 </a>
                 <a
+                  href="/learn"
+                  className="text-gray-600 hover:text-gray-900"
+                >
+                  Learn
+                </a>
+                <a
                   href="/settings"
                   className="text-gray-600 hover:text-gray-900"
                 >
