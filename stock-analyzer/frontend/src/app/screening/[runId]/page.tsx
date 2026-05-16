@@ -6,14 +6,18 @@ import { apiFetch } from "@/lib/api";
 import StockCard, { type StockResult } from "@/components/stock-card";
 import BulkActions from "@/components/bulk-actions";
 import PipelineStatus from "@/components/pipeline-status";
+import ProgressPanel from "@/components/ProgressPanel";
+import { useTaskContext, type ProgressData } from "@/contexts/TaskContext";
 
 interface TaskStatus {
 	id: number;
 	task_type: string;
 	status: string;
 	progress: string | null;
+	progress_data: ProgressData | null;
 	result_id: number | null;
 	error_message: string | null;
+	created_at: string | null;
 }
 
 interface ResultsPage {
@@ -42,7 +46,12 @@ export default function ScreeningResultsPage() {
 	const [taskId] = useState<number | null>(taskIdFromUrl);
 	const [taskStatus, setTaskStatus] = useState<string>("pending");
 	const [taskProgress, setTaskProgress] = useState<string | null>(null);
+	const [taskProgressData, setTaskProgressData] = useState<ProgressData | null>(null);
+	const [taskCreatedAt, setTaskCreatedAt] = useState<string | null>(null);
 	const [taskError, setTaskError] = useState<string | null>(null);
+	const [cancelling, setCancelling] = useState(false);
+
+	const { registerTask } = useTaskContext();
 
 	const [results, setResults] = useState<StockResult[]>([]);
 	const [total, setTotal] = useState(0);
@@ -68,12 +77,14 @@ export default function ScreeningResultsPage() {
 	const pollTask = useCallback(async () => {
 		if (taskId === null) return;
 		try {
-			const data = await apiFetch<TaskStatus>(`/tasks/${taskId}`);
+			const data = await apiFetch<TaskStatus>(`/screening/tasks/${taskId}/status`);
 			setTaskStatus(data.status);
 			setTaskProgress(data.progress);
+			setTaskProgressData(data.progress_data);
+			if (data.created_at) setTaskCreatedAt(data.created_at);
 			if (data.error_message) setTaskError(data.error_message);
 
-			if (data.status === "completed" && data.result_id) {
+			if ((data.status === "completed" || data.status === "cancelled") && data.result_id) {
 				setRunId(data.result_id);
 				if (pollingRef.current) {
 					clearInterval(pollingRef.current);
@@ -90,6 +101,12 @@ export default function ScreeningResultsPage() {
 			// Ignore transient errors during polling
 		}
 	}, [taskId]);
+
+	useEffect(() => {
+		if (taskId !== null) {
+			registerTask(taskId);
+		}
+	}, [taskId, registerTask]);
 
 	useEffect(() => {
 		if (taskId !== null && runId === null) {
@@ -291,31 +308,52 @@ export default function ScreeningResultsPage() {
 	// Render
 	// -----------------------------------------------------------------------
 
+	async function handleCancel() {
+		if (taskId === null) return;
+		setCancelling(true);
+		try {
+			await apiFetch(`/screening/tasks/${taskId}/cancel`, { method: "POST" });
+		} catch {
+			setCancelling(false);
+		}
+	}
+
 	// Task is still running
 	if (taskId !== null && runId === null) {
 		return (
-			<div className="flex flex-col items-center justify-center py-20">
+			<div className="mx-auto max-w-lg py-12">
 				{taskStatus === "failed" ? (
-					<>
+					<div className="text-center">
 						<p className="text-sm font-medium text-red-600">Screening failed</p>
 						{taskError && (
 							<p className="mt-1 text-xs text-red-500">{taskError}</p>
 						)}
 						<a
 							href="/screening"
-							className="mt-4 text-sm text-blue-600 hover:underline"
+							className="mt-4 inline-block text-sm text-blue-600 hover:underline"
 						>
 							Back to screening
 						</a>
-					</>
+					</div>
 				) : (
 					<>
-						<div className="mb-4 h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
-						<p className="text-sm font-medium text-gray-700">
-							Running screen...
-						</p>
-						{taskProgress && (
-							<p className="mt-1 text-xs text-gray-500">{taskProgress}</p>
+						<ProgressPanel
+							status={taskStatus}
+							progress={taskProgress}
+							progressData={taskProgressData}
+							createdAt={taskCreatedAt}
+							errorMessage={taskError}
+						/>
+						{(taskStatus === "running" || taskStatus === "pending") && (
+							<div className="mt-4 text-center">
+								<button
+									onClick={handleCancel}
+									disabled={cancelling}
+									className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
+								>
+									{cancelling ? "Cancelling, saving results..." : "Cancel Screen"}
+								</button>
+							</div>
 						)}
 					</>
 				)}
