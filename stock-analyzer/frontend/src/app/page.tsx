@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import Link from "next/link"
 import { apiFetch } from "@/lib/api"
 import PipelineView from "@/components/pipeline-view"
 import OpinionBadge from "@/components/opinion-badge"
@@ -172,12 +173,12 @@ export default function Dashboard() {
           <p className="mt-2 text-sm text-gray-500">
             Configure your portfolio preferences to get started.
           </p>
-          <a
+          <Link
             href="/settings"
             className="mt-4 inline-block rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
           >
             Configure Preferences
-          </a>
+          </Link>
         </div>
       )}
 
@@ -191,12 +192,12 @@ export default function Dashboard() {
             Your preferences are set. Run your first screen to find value
             stocks.
           </p>
-          <a
+          <Link
             href="/screening"
             className="mt-4 inline-block rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
           >
             Run First Screen
-          </a>
+          </Link>
         </div>
       )}
 
@@ -213,19 +214,19 @@ export default function Dashboard() {
           </p>
           <div className="mt-4 flex items-center justify-center gap-3">
             {runs.length > 0 && (
-              <a
+              <Link
                 href={`/screening/${runs[0].id}`}
                 className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
               >
                 View Latest Results
-              </a>
+              </Link>
             )}
-            <a
+            <Link
               href="/settings"
               className="rounded-lg border border-gray-200 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
             >
               Adjust Settings
-            </a>
+            </Link>
           </div>
         </div>
       )}
@@ -246,18 +247,18 @@ export default function Dashboard() {
           </div>
 
           <div className="flex gap-3">
-            <a
+            <Link
               href="/screening"
               className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
             >
               View Screening
-            </a>
-            <a
+            </Link>
+            <Link
               href="/research"
               className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
             >
               View Research
-            </a>
+            </Link>
           </div>
         </div>
       )}
@@ -308,12 +309,12 @@ export default function Dashboard() {
               <h2 className="text-sm font-semibold text-gray-900">
                 Latest Reports
               </h2>
-              <a
+              <Link
                 href="/research"
                 className="text-sm font-medium text-blue-600 hover:text-blue-700"
               >
                 View all
-              </a>
+              </Link>
             </div>
             <div className="space-y-3">
               {/* Sort by verdict: Buy first, then Hold, then Avoid */}
@@ -332,7 +333,7 @@ export default function Dashboard() {
                 })
                 .slice(0, 5)
                 .map((report) => (
-                  <a
+                  <Link
                     key={report.id}
                     href={`/research/${report.stock_ticker}`}
                     className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-50"
@@ -361,24 +362,24 @@ export default function Dashboard() {
                         Processing
                       </span>
                     )}
-                  </a>
+                  </Link>
                 ))}
             </div>
           </div>
 
           <div className="flex gap-3">
-            <a
+            <Link
               href="/screening"
               className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
             >
               Run New Screen
-            </a>
-            <a
+            </Link>
+            <Link
               href="/research"
               className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
             >
               All Reports
-            </a>
+            </Link>
           </div>
         </div>
       )}

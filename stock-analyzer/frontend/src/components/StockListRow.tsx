@@ -1,5 +1,7 @@
 "use client"
 
+import Link from "next/link"
+
 export interface StockListItem {
   id: number
   stock_ticker: string
@@ -100,13 +102,13 @@ export default function StockListRow({ stock, onClick, selected, onToggle, resea
     }
     if (stock.stage === "researched") {
       return (
-        <a
+        <Link
           href={`/research/${stock.stock_ticker}`}
           onClick={(e) => e.stopPropagation()}
           className="text-xs font-medium text-green-700 hover:underline"
         >
           View report
-        </a>
+        </Link>
       )
     }
     if (stock.stage === "screened" || !stock.stage) {

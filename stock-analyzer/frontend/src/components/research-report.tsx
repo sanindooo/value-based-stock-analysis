@@ -1,3 +1,4 @@
+import Link from "next/link"
 import OpinionBadge from "./opinion-badge"
 import SourceLinks from "./source-links"
 
@@ -56,12 +57,12 @@ export default function ResearchReport({
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-3">
-          <a
+          <Link
             href="/research"
             className="text-sm text-gray-400 hover:text-gray-600"
           >
             Research
-          </a>
+          </Link>
           <span className="text-sm text-gray-300">/</span>
           <h1 className="text-2xl font-bold text-gray-900">{ticker}</h1>
         </div>

@@ -1,3 +1,5 @@
+import Link from "next/link"
+
 interface PipelineViewProps {
   screened: number
   researching: number
@@ -58,7 +60,7 @@ export default function PipelineView(props: PipelineViewProps) {
                 />
               </svg>
             )}
-            <a
+            <Link
               href={stage.href}
               className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors hover:opacity-80 sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm ${
                 isActive ? stage.activeColor : stage.color
@@ -66,7 +68,7 @@ export default function PipelineView(props: PipelineViewProps) {
             >
               <span>{stage.label}</span>
               <span className="tabular-nums">{count}</span>
-            </a>
+            </Link>
           </div>
         )
       })}

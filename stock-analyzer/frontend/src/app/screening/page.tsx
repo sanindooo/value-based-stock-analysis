@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import Link from "next/link"
 import { toast } from "sonner"
 import { apiFetch } from "@/lib/api"
 import { useTaskContext } from "@/contexts/TaskContext"
@@ -241,12 +242,12 @@ export default function ScreeningPage() {
             {lastCompletedTask.status === "completed" ? "Screening complete" : lastCompletedTask.status === "failed" ? "Screening failed" : "Screening cancelled"}
           </span>
           {lastCompletedTask.status === "completed" && (
-            <a
+            <Link
               href={`/screening/${lastCompletedTask.result_id}`}
               className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-green-700"
             >
               View Results
-            </a>
+            </Link>
           )}
         </div>
       )}
@@ -269,7 +270,7 @@ export default function ScreeningPage() {
                 key={run.id}
                 className={`group relative rounded-xl border border-gray-200 bg-white transition-colors hover:border-gray-300 hover:bg-gray-50 ${isDeleting ? "opacity-50" : ""}`}
               >
-                <a
+                <Link
                   href={isRunning && run.task_id ? `/screening/task-${run.task_id}` : `/screening/${run.id}`}
                   className="flex items-center justify-between px-5 py-4"
                 >
@@ -308,7 +309,7 @@ export default function ScreeningPage() {
                       {run.status}
                     </span>
                   </div>
-                </a>
+                </Link>
 
                 {/* Expanded settings */}
                 {expandedConfigId === run.id && run.filter_config && (

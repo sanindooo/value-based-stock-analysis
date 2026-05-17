@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import Link from "next/link"
 import { toast } from "sonner"
 import { apiFetch } from "@/lib/api"
 import OpinionBadge from "@/components/opinion-badge"
@@ -344,12 +345,12 @@ export default function ResearchPage() {
             No research reports yet. Promote stocks from a screening run to
             start research.
           </p>
-          <a
+          <Link
             href="/screening"
             className="mt-3 inline-block text-sm font-medium text-blue-600 hover:text-blue-700"
           >
             Go to Screening
-          </a>
+          </Link>
         </div>
       ) : reports.length === 0 && hasFilters ? (
         <div className="rounded-xl border border-gray-200 bg-white py-12 text-center">
@@ -367,7 +368,7 @@ export default function ResearchPage() {
           {view === "grid" ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {reports.map((report) => (
-                <a
+                <Link
                   key={report.id}
                   href={`/research/${report.stock_ticker}`}
                   className="flex flex-col justify-between rounded-xl border border-gray-200 bg-white p-5 transition-colors hover:border-gray-300 hover:bg-gray-50"
@@ -392,13 +393,13 @@ export default function ResearchPage() {
                       </span>
                     )}
                   </div>
-                </a>
+                </Link>
               ))}
             </div>
           ) : (
             <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
               {reports.map((report, i) => (
-                <a
+                <Link
                   key={report.id}
                   href={`/research/${report.stock_ticker}`}
                   className={`flex items-center justify-between px-5 py-3 transition-colors hover:bg-gray-50 ${
@@ -425,7 +426,7 @@ export default function ResearchPage() {
                       </span>
                     )}
                   </div>
-                </a>
+                </Link>
               ))}
             </div>
           )}

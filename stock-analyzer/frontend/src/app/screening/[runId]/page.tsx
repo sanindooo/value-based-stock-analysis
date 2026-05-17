@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import StockCard, { type StockResult } from "@/components/stock-card";
@@ -425,12 +426,12 @@ export default function ScreeningResultsPage() {
 						{taskError && (
 							<p className="mt-1 text-xs text-red-500">{taskError}</p>
 						)}
-						<a
+						<Link
 							href="/screening"
 							className="mt-4 inline-block text-sm text-blue-600 hover:underline"
 						>
 							Back to screening
-						</a>
+						</Link>
 					</div>
 				) : (
 					<>
@@ -473,12 +474,12 @@ export default function ScreeningResultsPage() {
 		return (
 			<div className="flex flex-col items-center justify-center py-20">
 				<p className="text-sm text-red-600">{taskError}</p>
-				<a
+				<Link
 					href="/screening"
 					className="mt-4 text-sm text-blue-600 hover:underline"
 				>
 					Back to screening
-				</a>
+				</Link>
 			</div>
 		);
 	}
@@ -492,12 +493,12 @@ export default function ScreeningResultsPage() {
 			{/* Header */}
 			<div className="mb-6">
 				<div className="flex items-center gap-3">
-					<a
+					<Link
 						href="/screening"
 						className="text-sm text-gray-400 hover:text-gray-600"
 					>
 						Screening
-					</a>
+					</Link>
 					<span className="text-sm text-gray-300">/</span>
 					<h1 className="text-2xl font-bold text-gray-900">Run #{runId}</h1>
 					<span className="text-sm text-gray-500">{total} results</span>
@@ -785,12 +786,12 @@ export default function ScreeningResultsPage() {
 											);
 										})()}
 									{stock.stage === "researched" && (
-										<a
+										<Link
 											href={`/research/${stock.stock_ticker}`}
 											className="inline-flex items-center gap-1.5 rounded-lg border border-green-200 px-2.5 py-1 text-xs font-medium text-green-700 hover:bg-green-50"
 										>
 											Research complete: View report
-										</a>
+										</Link>
 									)}
 								</>
 							}

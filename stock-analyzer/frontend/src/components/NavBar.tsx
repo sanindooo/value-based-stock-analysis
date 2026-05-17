@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import Link from "next/link"
 import { useFocusTrap } from "@/hooks/useFocusTrap"
 
 const NAV_LINKS = [
@@ -42,20 +43,20 @@ export default function NavBar() {
   return (
     <nav className="border-b border-gray-200 bg-white">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-        <a href="/" className="text-lg font-semibold">
+        <Link href="/" className="text-lg font-semibold">
           Stock Analyzer
-        </a>
+        </Link>
 
         {/* Desktop links */}
         <div className="hidden gap-6 text-sm md:flex">
           {NAV_LINKS.map((link) => (
-            <a
+            <Link
               key={link.href}
               href={link.href}
               className="text-gray-600 hover:text-gray-900"
             >
               {link.label}
-            </a>
+            </Link>
           ))}
         </div>
 
@@ -99,14 +100,14 @@ export default function NavBar() {
             </div>
             <div className="flex flex-col gap-4">
               {NAV_LINKS.map((link) => (
-                <a
+                <Link
                   key={link.href}
                   href={link.href}
                   onClick={close}
                   className="text-base text-gray-700 hover:text-gray-900"
                 >
                   {link.label}
-                </a>
+                </Link>
               ))}
             </div>
           </div>

@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import Link from "next/link"
 import { useParams } from "next/navigation"
 import { apiFetch } from "@/lib/api"
 import ResearchReport from "@/components/research-report"
@@ -227,12 +228,12 @@ export default function ResearchTickerPage() {
     return (
       <div className="flex flex-col items-center justify-center py-20">
         <p className="text-sm text-red-600">{error}</p>
-        <a
+        <Link
           href="/research"
           className="mt-4 text-sm text-blue-600 hover:underline"
         >
           Back to Research
-        </a>
+        </Link>
       </div>
     )
   }
