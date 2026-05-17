@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
+import { backendFetch } from "@/lib/backend-fetch"
 
 export const dynamic = "force-dynamic"
-
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000"
 
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ runId: string }> }
 ) {
   const { runId } = await params
-  const res = await fetch(`${BACKEND_URL}/api/screening/runs/${runId}`, {
+  const res = await backendFetch(`/api/screening/runs/${runId}`, {
     headers: { "Content-Type": "application/json" },
   })
   const data = await res.json()
@@ -21,7 +20,7 @@ export async function DELETE(
   { params }: { params: Promise<{ runId: string }> }
 ) {
   const { runId } = await params
-  const res = await fetch(`${BACKEND_URL}/api/screening/runs/${runId}`, {
+  const res = await backendFetch(`/api/screening/runs/${runId}`, {
     method: "DELETE",
   })
   if (res.status === 204) {

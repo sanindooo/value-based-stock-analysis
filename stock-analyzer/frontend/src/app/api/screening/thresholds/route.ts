@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server"
+import { backendFetch } from "@/lib/backend-fetch"
 
 export const dynamic = "force-dynamic"
 
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000"
-
 export async function GET() {
-  const res = await fetch(`${BACKEND_URL}/api/screening/thresholds`, {
+  const res = await backendFetch("/api/screening/thresholds", {
     headers: { "Content-Type": "application/json" },
   })
   const data = await res.json()

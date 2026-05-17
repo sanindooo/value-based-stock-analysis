@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
+import { backendFetch } from "@/lib/backend-fetch"
 
 export const dynamic = "force-dynamic"
-
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000"
 
 export async function GET(
   request: NextRequest,
@@ -11,9 +10,9 @@ export async function GET(
   const { runId } = await params
   const { searchParams } = new URL(request.url)
   const qs = searchParams.toString()
-  const url = `${BACKEND_URL}/api/screening/${runId}/results${qs ? `?${qs}` : ""}`
+  const path = `/api/screening/${runId}/results${qs ? `?${qs}` : ""}`
 
-  const res = await fetch(url, {
+  const res = await backendFetch(path, {
     headers: { "Content-Type": "application/json" },
   })
   const data = await res.json()
@@ -28,8 +27,8 @@ export async function PATCH(
   const body = await request.json()
   const { resultId, stage } = body as { resultId: number; stage: string }
 
-  const res = await fetch(
-    `${BACKEND_URL}/api/screening/${runId}/results/${resultId}/stage`,
+  const res = await backendFetch(
+    `/api/screening/${runId}/results/${resultId}/stage`,
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },

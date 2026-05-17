@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
+import { backendFetch } from "@/lib/backend-fetch"
 
 export const dynamic = "force-dynamic"
-
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000"
 
 export async function GET(
   request: NextRequest,
@@ -12,21 +11,16 @@ export async function GET(
   const { searchParams } = new URL(request.url)
   const type = searchParams.get("type")
 
-  // If type=status, proxy to the task status endpoint
   if (type === "status") {
-    const res = await fetch(
-      `${BACKEND_URL}/api/research/status/${id}`,
-      {
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-      }
-    )
+    const res = await backendFetch(`/api/research/status/${id}`, {
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+    })
     const data = await res.json()
     return NextResponse.json(data, { status: res.status })
   }
 
-  // Default: proxy to the report endpoint
-  const res = await fetch(`${BACKEND_URL}/api/research/${id}`, {
+  const res = await backendFetch(`/api/research/${id}`, {
     headers: { "Content-Type": "application/json" },
   })
   const data = await res.json()
