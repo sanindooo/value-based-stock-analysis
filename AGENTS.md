@@ -62,7 +62,7 @@ Errors are learning opportunities. When something breaks:
 - `execution/` - Python scripts (the deterministic tools)
 - `directives/` - SOPs in Markdown (the instruction set)
 - `docs/plans/` - Feature implementation plans (created by compound engineering workflow)
-- `docs/solutions/` - Documented learnings and fixes (searchable by future plans)
+- `docs/solutions/` - Documented learnings and fixes, organized by category (e.g. `architecture-patterns/`, `best-practices/`) with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in documented areas.
 - `docs/brainstorms/` - Early-stage thinking and exploration
 - `todos/` - Ephemeral review findings (per-PR, not committed)
 - `.env` - Environment variables and API keys
