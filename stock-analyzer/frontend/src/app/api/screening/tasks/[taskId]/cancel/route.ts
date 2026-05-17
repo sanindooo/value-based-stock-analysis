@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
+import { revalidateTag } from "next/cache"
 import { backendFetch } from "@/lib/backend-fetch"
-
-export const dynamic = "force-dynamic"
 
 export async function POST(
   _request: NextRequest,
@@ -13,5 +12,6 @@ export async function POST(
     headers: { "Content-Type": "application/json" },
   })
   const data = await res.json()
+  if (res.ok) revalidateTag("screening-runs", "max")
   return NextResponse.json(data, { status: res.status })
 }

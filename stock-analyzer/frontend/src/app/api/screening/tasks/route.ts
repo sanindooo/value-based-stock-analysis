@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
   const path = `/api/screening/tasks${qs ? `?${qs}` : ""}`
 
   const res = await backendFetch(path, {
+    cache: "no-store",
     headers: { "Content-Type": "application/json" },
   })
   const data = await res.json()
