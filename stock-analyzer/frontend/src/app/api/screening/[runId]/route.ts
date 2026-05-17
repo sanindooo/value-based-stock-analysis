@@ -8,14 +8,18 @@ export async function GET(
 ) {
   const { runId } = await params
   const { searchParams } = new URL(request.url)
-  const qs = searchParams.toString()
+  const poll = searchParams.get("poll")
+
+  const backendParams = new URLSearchParams(searchParams)
+  backendParams.delete("poll")
+  const qs = backendParams.toString()
   const path = `/api/screening/${runId}/results${qs ? `?${qs}` : ""}`
 
-  const res = await backendFetch(path, {
-    cache: "force-cache",
-    next: { tags: [`screening-run-${runId}`], revalidate: 3600 },
-    headers: { "Content-Type": "application/json" },
-  })
+  const fetchOptions: RequestInit = poll
+    ? { cache: "no-store", headers: { "Content-Type": "application/json" } }
+    : { cache: "force-cache", next: { tags: [`screening-run-${runId}`], revalidate: 3600 }, headers: { "Content-Type": "application/json" } }
+
+  const res = await backendFetch(path, fetchOptions)
   const data = await res.json()
   return NextResponse.json(data, { status: res.status })
 }

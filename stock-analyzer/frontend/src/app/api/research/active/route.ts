@@ -10,8 +10,10 @@ export async function GET() {
     headers: { "Content-Type": "application/json" },
   })
   const data = await res.json()
-  // When no active tasks remain, bust reports cache so completed ones appear
-  if (res.ok && Array.isArray(data) && data.length === 0) {
+  // Always invalidate reports cache during active research polling —
+  // background tasks complete and create reports without going through
+  // the Next.js cache layer, so the cached report list goes stale.
+  if (res.ok) {
     revalidateTag("research-reports", "max")
   }
   return NextResponse.json(data, { status: res.status })

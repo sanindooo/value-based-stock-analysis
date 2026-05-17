@@ -214,5 +214,14 @@ async def run_research_for_ticker(
             if task:
                 task.status = "failed"
                 task.error_message = str(exc)[:1000]
-                await db.commit()
+
+            await db.execute(
+                update(ScreeningResult)
+                .where(
+                    ScreeningResult.stock_ticker == ticker,
+                    ScreeningResult.stage == "researching",
+                )
+                .values(stage="screened")
+            )
+            await db.commit()
             raise

@@ -200,7 +200,7 @@ export default function ScreeningResultsPage() {
 	const pollStages = useCallback(async () => {
 		if (runId === null) return;
 		try {
-			const qs = new URLSearchParams({ sort_by: sortBy, order, limit: "200", offset: "0" }).toString();
+			const qs = new URLSearchParams({ sort_by: sortBy, order, limit: "200", offset: "0", poll: "1" }).toString();
 			const data = await apiFetch<ResultsPage>(`/screening/${runId}?${qs}`);
 			setResults((prev) => {
 				let changed = false;
