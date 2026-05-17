@@ -9,6 +9,7 @@ export async function GET(
 ) {
   const { taskId } = await params
   const res = await backendFetch(`/api/screening/tasks/${taskId}/status`, {
+    cache: "no-store",
     headers: { "Content-Type": "application/json" },
   })
   const data = await res.json()

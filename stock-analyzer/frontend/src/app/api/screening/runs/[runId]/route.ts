@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
+import { revalidateTag } from "next/cache"
 import { backendFetch } from "@/lib/backend-fetch"
-
-export const dynamic = "force-dynamic"
 
 export async function GET(
   _request: NextRequest,
@@ -9,6 +8,8 @@ export async function GET(
 ) {
   const { runId } = await params
   const res = await backendFetch(`/api/screening/runs/${runId}`, {
+    cache: "force-cache",
+    next: { tags: [`screening-run-${runId}`, "screening-runs"], revalidate: 3600 },
     headers: { "Content-Type": "application/json" },
   })
   const data = await res.json()
@@ -23,6 +24,10 @@ export async function DELETE(
   const res = await backendFetch(`/api/screening/runs/${runId}`, {
     method: "DELETE",
   })
+  if (res.ok) {
+    revalidateTag("screening-runs", "max")
+    revalidateTag("screening-highlights", "max")
+  }
   if (res.status === 204) {
     return new NextResponse(null, { status: 204 })
   }

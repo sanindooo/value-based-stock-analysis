@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
+import { revalidateTag } from "next/cache"
 import { backendFetch } from "@/lib/backend-fetch"
-
-export const dynamic = "force-dynamic"
 
 export async function GET(
   request: NextRequest,
@@ -13,6 +12,8 @@ export async function GET(
   const path = `/api/screening/${runId}/results${qs ? `?${qs}` : ""}`
 
   const res = await backendFetch(path, {
+    cache: "force-cache",
+    next: { tags: [`screening-run-${runId}`], revalidate: 3600 },
     headers: { "Content-Type": "application/json" },
   })
   const data = await res.json()
@@ -36,5 +37,9 @@ export async function PATCH(
     }
   )
   const data = await res.json()
+  if (res.ok) {
+    revalidateTag(`screening-run-${runId}`, "max")
+    revalidateTag("screening-highlights", "max")
+  }
   return NextResponse.json(data, { status: res.status })
 }

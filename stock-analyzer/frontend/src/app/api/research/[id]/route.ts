@@ -11,6 +11,7 @@ export async function GET(
   const { searchParams } = new URL(request.url)
   const type = searchParams.get("type")
 
+  // Task status polling — must stay uncached
   if (type === "status") {
     const res = await backendFetch(`/api/research/status/${id}`, {
       headers: { "Content-Type": "application/json" },
@@ -20,6 +21,8 @@ export async function GET(
     return NextResponse.json(data, { status: res.status })
   }
 
+  // Report data — cacheable, but this route also serves status polls,
+  // so force-dynamic must stay to avoid caching status responses
   const res = await backendFetch(`/api/research/${id}`, {
     headers: { "Content-Type": "application/json" },
   })

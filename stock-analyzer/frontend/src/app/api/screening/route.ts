@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
+import { revalidateTag } from "next/cache"
 import { backendFetch } from "@/lib/backend-fetch"
-
-export const dynamic = "force-dynamic"
 
 export async function GET() {
   const res = await backendFetch("/api/screening/runs", {
+    cache: "force-cache",
+    next: { tags: ["screening-runs"], revalidate: 300 },
     headers: { "Content-Type": "application/json" },
   })
   const data = await res.json()
@@ -19,5 +20,6 @@ export async function POST(request: NextRequest) {
     body: JSON.stringify(body),
   })
   const data = await res.json()
+  if (res.ok) revalidateTag("screening-runs", "max")
   return NextResponse.json(data, { status: res.status })
 }
