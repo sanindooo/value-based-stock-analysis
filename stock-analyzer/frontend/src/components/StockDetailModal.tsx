@@ -73,7 +73,12 @@ export default function StockDetailModal({ stock, onClose, triggerRef }: StockDe
   const [triggerError, setTriggerError] = useState<string | null>(null)
   const [taskId, setTaskId] = useState<number | null>(null)
   const [taskProgress, setTaskProgress] = useState<string | null>(null)
+  const [showDeepConfirm, setShowDeepConfirm] = useState(false)
+  const [deepLoading, setDeepLoading] = useState(false)
+  const [deepTaskId, setDeepTaskId] = useState<number | null>(null)
+  const [deepProgress, setDeepProgress] = useState<string | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const deepPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -83,6 +88,7 @@ export default function StockDetailModal({ stock, onClose, triggerRef }: StockDe
     return () => {
       document.removeEventListener("keydown", handleKeyDown)
       if (pollRef.current) clearInterval(pollRef.current)
+      if (deepPollRef.current) clearInterval(deepPollRef.current)
       triggerRef?.current?.focus()
     }
   }, [onClose, triggerRef])
@@ -142,6 +148,45 @@ export default function StockDetailModal({ stock, onClose, triggerRef }: StockDe
         : "Failed to start analysis"
       setTriggerError(msg)
       setTriggerLoading(false)
+    }
+  }
+
+  async function triggerDeepAnalysis() {
+    setShowDeepConfirm(false)
+    setDeepLoading(true)
+    setTriggerError(null)
+    try {
+      const data = await apiFetch<{ tasks: Array<{ ticker: string; task_id: number }> }>("/research", {
+        method: "POST",
+        body: JSON.stringify({ stock_tickers: [stock.stock_ticker] }),
+      })
+      const taskInfo = data.tasks[0]
+      if (!taskInfo) throw new Error("No task created")
+      setDeepTaskId(taskInfo.task_id)
+      setDeepProgress("queued")
+
+      deepPollRef.current = setInterval(async () => {
+        try {
+          const taskData = await apiFetch<{ status: string; progress: string | null }>(`/research/status/${taskInfo.task_id}?poll=1`)
+          setDeepProgress(taskData.progress)
+          if (taskData.status === "completed" || taskData.status === "failed") {
+            if (deepPollRef.current) clearInterval(deepPollRef.current)
+            deepPollRef.current = null
+            setDeepTaskId(null)
+            setDeepLoading(false)
+            if (taskData.status === "completed") {
+              await loadAnalyses()
+            } else {
+              setTriggerError("Deep analysis failed")
+            }
+          }
+        } catch {
+          // Ignore polling errors
+        }
+      }, 5000)
+    } catch {
+      setTriggerError("Failed to start deep analysis")
+      setDeepLoading(false)
     }
   }
 
@@ -260,11 +305,11 @@ export default function StockDetailModal({ stock, onClose, triggerRef }: StockDe
                 {triggerLoading ? (taskProgress || "Running...") : "Standard Analysis"}
               </button>
               <button
-                disabled
-                className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-400 opacity-50"
-                title="Deep analysis coming soon"
+                onClick={() => setShowDeepConfirm(true)}
+                disabled={deepLoading || deepTaskId !== null || triggerLoading}
+                className="rounded-lg border border-purple-200 px-3 py-1.5 text-xs font-medium text-purple-600 transition-colors hover:bg-purple-50 disabled:opacity-50"
               >
-                Deep Analysis
+                {deepLoading ? (deepProgress || "Running...") : "Deep Analysis"}
               </button>
             </div>
           </div>
@@ -376,6 +421,30 @@ export default function StockDetailModal({ stock, onClose, triggerRef }: StockDe
             </p>
           )}
         </div>
+
+        {/* Deep Analysis Confirmation Dialog */}
+        {showDeepConfirm && (
+          <div className="mt-4 rounded-lg border border-purple-200 bg-purple-50 p-4">
+            <h4 className="text-sm font-semibold text-purple-900">Run Deep Analysis?</h4>
+            <p className="mt-1 text-xs text-purple-700">
+              This will fetch and read full news articles, research competitive position, and generate an AI-powered research report. This consumes API credits (Claude AI + article fetching).
+            </p>
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={triggerDeepAnalysis}
+                className="rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-purple-700"
+              >
+                Run Deep Analysis
+              </button>
+              <button
+                onClick={() => setShowDeepConfirm(false)}
+                className="rounded-lg border border-purple-200 px-3 py-1.5 text-xs font-medium text-purple-600 transition-colors hover:bg-purple-100"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

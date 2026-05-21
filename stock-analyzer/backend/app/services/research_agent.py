@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from datetime import datetime, timezone
 
 from anthropic import Anthropic
@@ -21,8 +22,10 @@ from app.core.config import settings
 from app.models.research import ResearchReport
 from app.models.screening import ScreeningResult
 from app.models.task import TaskStatus
+from app.services.article_extractor import ExtractedArticle, fetch_and_extract, _reset_zyte_budget
 from app.services.edgar_client import fetch_filing_sections
 from app.services.news_client import fetch_news
+from app.services.news_discovery import discover_articles
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +59,25 @@ Guidelines:
 - Respond ONLY with the JSON object, no markdown code fences or extra text."""
 
 
-def _build_user_prompt(ticker: str, filing_data, news_articles: list) -> str:
+MAX_ARTICLE_PROMPT_CHARS = 5000
+
+
+def _sanitize_article_content(content: str) -> str:
+    """Strip injection patterns and cap length."""
+    content = re.sub(
+        r"(?i)(ignore\s+(all\s+)?previous\s+instructions|you\s+are\s+now|system\s*:)",
+        "",
+        content,
+    )
+    return content[:MAX_ARTICLE_PROMPT_CHARS]
+
+
+def _build_user_prompt(
+    ticker: str,
+    filing_data,
+    news_articles: list,
+    full_articles: list[ExtractedArticle] | None = None,
+) -> str:
     """Build the user prompt from collected data."""
     parts = [f"## Research Request: {ticker}\n"]
 
@@ -69,7 +90,6 @@ def _build_user_prompt(ticker: str, filing_data, news_articles: list) -> str:
         if filing_data.sections:
             for key, text in filing_data.sections.items():
                 label = key.replace("_", " ").title()
-                # Truncate very long sections to stay within context limits
                 truncated = text[:50_000] if len(text) > 50_000 else text
                 parts.append(f"\n#### {label}\n{truncated}")
         elif filing_data.raw_text_fallback:
@@ -77,7 +97,7 @@ def _build_user_prompt(ticker: str, filing_data, news_articles: list) -> str:
     else:
         parts.append("### SEC Filing\nNo recent SEC filing data available for this ticker.")
 
-    # News
+    # News headlines
     if news_articles:
         parts.append(f"\n### Recent News ({len(news_articles)} articles)")
         for article in news_articles:
@@ -87,6 +107,19 @@ def _build_user_prompt(ticker: str, filing_data, news_articles: list) -> str:
             )
     else:
         parts.append("\n### Recent News\nNo recent news articles found.")
+
+    # Full article content (deep analysis only)
+    if full_articles:
+        parts.append(f"\n### Full News Articles ({len(full_articles)} articles)")
+        for article in full_articles:
+            sanitized = _sanitize_article_content(article.content)
+            parts.append(
+                f"\n<article>\n"
+                f"Title: {article.title}\n"
+                f"Date: {article.publication_date}\n\n"
+                f"{sanitized}\n"
+                f"</article>"
+            )
 
     return "\n\n".join(parts)
 
@@ -134,6 +167,8 @@ async def run_research_for_ticker(
     db: AsyncSession,
     ticker: str,
     task_id: int,
+    mode: str = "value",
+    company_name: str | None = None,
 ) -> ResearchReport:
     """Run the full research pipeline for a single ticker.
 
@@ -159,9 +194,23 @@ async def run_research_for_ticker(
             await _update_task_progress(db, task_id, "fetching_news")
             news_articles = await fetch_news(ticker)
 
+            # Step 3b: Deep analysis — discover and extract full articles
+            full_articles: list[ExtractedArticle] = []
+            await _update_task_progress(db, task_id, "fetching_articles")
+            _reset_zyte_budget()
+            discovered = await discover_articles(ticker, company_name)
+            for discovered_article in discovered:
+                extracted = await fetch_and_extract(discovered_article.url)
+                if extracted:
+                    if not extracted.title:
+                        extracted.title = discovered_article.title
+                    if not extracted.publication_date:
+                        extracted.publication_date = discovered_article.published_date
+                    full_articles.append(extracted)
+
             # Step 4: Build prompt and call Claude
             await _update_task_progress(db, task_id, "analyzing")
-            user_prompt = _build_user_prompt(ticker, filing_data, news_articles)
+            user_prompt = _build_user_prompt(ticker, filing_data, news_articles, full_articles or None)
             report_content = await asyncio.to_thread(_call_claude_sync, user_prompt)
 
             # Step 5: Store report
@@ -175,12 +224,18 @@ async def run_research_for_ticker(
                     {"headline": a.headline, "source": a.source, "url": a.url}
                     for a in news_articles
                 ],
+                "articles_count": len(full_articles),
+                "article_sources": [
+                    {"title": a.title, "publication_date": a.publication_date}
+                    for a in full_articles
+                ],
             }
 
             report = ResearchReport(
                 stock_ticker=ticker,
                 report_content=report_content,
                 sources=sources,
+                mode=mode,
             )
             db.add(report)
             await db.commit()

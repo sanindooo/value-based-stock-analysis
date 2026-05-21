@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     fmp_api_key: str = ""
     anthropic_api_key: str = ""
     finnhub_api_key: str = ""
+    serpapi_api_key: str = ""
+    zyte_api_key: str = ""
+    zyte_max_articles_per_analysis: int = 5
     site_secret: str = ""
     user_email: str = "admin@example.com"
     yahoo_concurrency: int = 10
