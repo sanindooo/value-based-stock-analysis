@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useSearchParams, useRouter } from "next/navigation"
 import { apiFetch } from "@/lib/api"
 import ResearchReport from "@/components/research-report"
 
@@ -71,6 +71,7 @@ const DOT_CLASSES: Record<TrafficColor, string> = {
 interface ReportSummary {
   id: number
   stock_ticker: string
+  mode: string
   created_at: string
   verdict: string | null
   confidence: string | null
@@ -114,9 +115,13 @@ interface StockData {
 
 export default function ResearchTickerPage() {
   const params = useParams<{ ticker: string }>()
+  const searchParams = useSearchParams()
+  const router = useRouter()
   const ticker = params.ticker.toUpperCase()
+  const requestedMode = searchParams.get("mode") || "value"
 
   const [report, setReport] = useState<FullReport | null>(null)
+  const [otherModeReport, setOtherModeReport] = useState<ReportSummary | null>(null)
   const [metrics, setMetrics] = useState<Record<string, number | null> | null>(
     null
   )
@@ -125,18 +130,26 @@ export default function ResearchTickerPage() {
   const [thresholds, setThresholds] = useState<ThresholdsResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [runningResearch, setRunningResearch] = useState(false)
 
-  // Fetch report: first get the report list to find the ID for this ticker
   const fetchReport = useCallback(async () => {
     try {
-      const summaries = await apiFetch<ReportSummary[]>("/research")
-      const match = summaries.find(
+      const summaries = await apiFetch<ReportSummary[]>("/research?deduplicated=false")
+      const tickerReports = summaries.filter(
         (s) => s.stock_ticker.toUpperCase() === ticker
       )
+
+      const match = tickerReports.find((s) => s.mode === requestedMode)
+        || tickerReports[0]
       if (!match) {
         setError("No research report found for this ticker.")
         return
       }
+
+      const otherMode = requestedMode === "value" ? "preservation" : "value"
+      const other = tickerReports.find((s) => s.mode === otherMode) || null
+      setOtherModeReport(other)
+
       const full = await apiFetch<FullReport>(`/research/${match.id}`)
       setReport(full)
     } catch {
@@ -144,7 +157,7 @@ export default function ResearchTickerPage() {
     } finally {
       setLoading(false)
     }
-  }, [ticker])
+  }, [ticker, requestedMode])
 
   // Fetch metrics — try screening results first, fall back to direct stock data
   const fetchMetrics = useCallback(async () => {
@@ -206,6 +219,20 @@ export default function ResearchTickerPage() {
       // Silently fail
     } finally {
       setRefreshing(false)
+    }
+  }
+
+  async function runOtherModeResearch() {
+    const otherMode = requestedMode === "value" ? "preservation" : "value"
+    setRunningResearch(true)
+    try {
+      await apiFetch("/research", {
+        method: "POST",
+        body: JSON.stringify({ stock_tickers: [ticker], mode: otherMode }),
+      })
+      router.push(`/research`)
+    } catch {
+      setRunningResearch(false)
     }
   }
 
@@ -372,6 +399,60 @@ export default function ResearchTickerPage() {
           createdAt={report.created_at}
           mode={report.mode}
         />
+
+        {/* Cross-mode section */}
+        {(() => {
+          const otherMode = requestedMode === "value" ? "preservation" : "value"
+          const otherLabel = otherMode === "value" ? "Value" : "Value + Preservation"
+          return (
+            <div className="mt-8 rounded-xl border border-gray-200 bg-white p-6">
+              <h2 className="mb-2 text-sm font-semibold text-gray-900">
+                {otherLabel} Report
+              </h2>
+              {otherModeReport ? (
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-gray-500">
+                    Generated {new Date(otherModeReport.created_at).toLocaleDateString("en-US", {
+                      year: "numeric", month: "long", day: "numeric",
+                    })}
+                    {otherModeReport.verdict && (
+                      <span className="ml-2 text-gray-400">
+                        — {otherModeReport.verdict}{otherModeReport.confidence ? ` (${otherModeReport.confidence})` : ""}
+                      </span>
+                    )}
+                  </p>
+                  <Link
+                    href={`/research/${ticker}?mode=${otherMode}`}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                      otherMode === "preservation"
+                        ? "border border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                        : "border border-blue-200 text-blue-700 hover:bg-blue-50"
+                    }`}
+                  >
+                    View {otherLabel} Report
+                  </Link>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-gray-500">
+                    No {otherMode} report yet for {ticker}.
+                  </p>
+                  <button
+                    onClick={runOtherModeResearch}
+                    disabled={runningResearch}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
+                      otherMode === "preservation"
+                        ? "border border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                        : "border border-blue-200 text-blue-700 hover:bg-blue-50"
+                    }`}
+                  >
+                    {runningResearch ? "Starting..." : `Run ${otherLabel} Analysis`}
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })()}
       </div>
     </div>
   )

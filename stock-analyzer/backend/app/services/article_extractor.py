@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import ipaddress
 import logging
 import re
+import socket
+import threading
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -18,7 +21,6 @@ logger = logging.getLogger(__name__)
 MAX_CONTENT_SIZE = 10 * 1024 * 1024  # 10MB
 MAX_ARTICLE_CONTENT = 1024 * 1024  # 1MB after cleaning
 MIN_CONTENT_LENGTH = 100
-MAX_RESPONSE_SIZE = 10 * 1024 * 1024
 
 _PRIVATE_NETWORKS = [
     ipaddress.ip_network("10.0.0.0/8"),
@@ -46,6 +48,14 @@ class ExtractedArticle:
     publication_date: str
 
 
+def _is_private_ip(addr_str: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(addr_str)
+        return any(addr in net for net in _PRIVATE_NETWORKS)
+    except ValueError:
+        return False
+
+
 def is_safe_url(url: str) -> bool:
     try:
         parsed = urlparse(url)
@@ -59,15 +69,23 @@ def is_safe_url(url: str) -> bool:
     if not hostname:
         return False
 
+    lower = hostname.lower()
+    if lower in ("localhost", "localhost.localdomain"):
+        return False
+
     try:
         addr = ipaddress.ip_address(hostname)
         return not any(addr in net for net in _PRIVATE_NETWORKS)
     except ValueError:
         pass
 
-    lower = hostname.lower()
-    if lower in ("localhost", "localhost.localdomain"):
-        return False
+    try:
+        resolved = socket.getaddrinfo(hostname, None)
+        for _, _, _, _, sockaddr in resolved:
+            if _is_private_ip(sockaddr[0]):
+                return False
+    except socket.gaierror:
+        pass
 
     return True
 
@@ -79,42 +97,51 @@ def _get_ua() -> str:
     return ua
 
 
-def _fetch_html_sync(url: str) -> str | None:
+def _fetch_html_sync(url: str, budget: "_ZyteBudget | None" = None) -> str | None:
     try:
         with httpx.Client(timeout=15, follow_redirects=True, max_redirects=5) as client:
             resp = client.get(url, headers={"User-Agent": _get_ua()})
             if resp.status_code in (403, 429):
-                return _fetch_via_zyte_sync(url)
+                return _fetch_via_zyte_sync(url, budget)
             resp.raise_for_status()
             content = resp.text[:MAX_CONTENT_SIZE]
             replacement_ratio = content.count("�") / max(len(content), 1)
             if replacement_ratio > 0.05:
-                return _fetch_via_zyte_sync(url)
+                return _fetch_via_zyte_sync(url, budget)
             return content
     except httpx.HTTPStatusError:
-        return _fetch_via_zyte_sync(url)
+        return _fetch_via_zyte_sync(url, budget)
     except Exception as exc:
-        logger.warning("HTTP fetch failed for %s: %s", url, exc)
+        logger.warning("HTTP fetch failed for %s: %s", url, type(exc).__name__)
         return None
 
 
-_zyte_budget_used = 0
+class _ZyteBudget:
+    def __init__(self, cap: int):
+        self._used = 0
+        self._cap = cap
+        self._lock = threading.Lock()
+
+    def try_consume(self) -> bool:
+        with self._lock:
+            if self._used >= self._cap:
+                return False
+            self._used += 1
+            return True
 
 
-def _reset_zyte_budget():
-    global _zyte_budget_used
-    _zyte_budget_used = 0
+def create_zyte_budget() -> _ZyteBudget:
+    return _ZyteBudget(settings.zyte_max_articles_per_analysis)
 
 
-def _fetch_via_zyte_sync(url: str) -> str | None:
-    global _zyte_budget_used
+def _fetch_via_zyte_sync(url: str, budget: "_ZyteBudget | None" = None) -> str | None:
     api_key = settings.zyte_api_key
     if not api_key:
         logger.debug("Zyte API key not configured, skipping fallback for %s", url)
         return None
 
-    if _zyte_budget_used >= settings.zyte_max_articles_per_analysis:
-        logger.debug("Zyte budget cap reached (%d), skipping %s", _zyte_budget_used, url)
+    if budget and not budget.try_consume():
+        logger.debug("Zyte budget cap reached, skipping %s", url)
         return None
 
     try:
@@ -126,26 +153,29 @@ def _fetch_via_zyte_sync(url: str) -> str | None:
             )
             resp.raise_for_status()
             data = resp.json()
-            _zyte_budget_used += 1
-            import base64
             body = data.get("httpResponseBody", "")
+            if not body:
+                logger.warning("Zyte returned empty body for %s", url)
+                return None
             return base64.b64decode(body).decode("utf-8", errors="replace")[:MAX_CONTENT_SIZE]
     except Exception as exc:
-        logger.warning("Zyte fetch failed for %s: %s", url, exc)
+        logger.warning("Zyte fetch failed for %s: %s", url, type(exc).__name__)
         return None
 
 
-def _extract_trafilatura(html: str, url: str) -> str | None:
+def _extract_trafilatura(html: str, url: str) -> tuple[str | None, str]:
+    """Returns (content, title). Title is extracted alongside content to avoid double parsing."""
     try:
         from trafilatura import bare_extraction
         result = bare_extraction(html, url=url, favor_precision=True)
         if result and result.get("text"):
             text = result["text"]
+            title = result.get("title", "") or ""
             if len(text) >= MIN_CONTENT_LENGTH:
-                return text
+                return text, title
     except Exception as exc:
         logger.debug("Trafilatura extraction failed: %s", exc)
-    return None
+    return None, ""
 
 
 def _extract_readability(html: str) -> str | None:
@@ -197,12 +227,13 @@ def clean_content(text: str) -> str:
     return text.strip()[:MAX_ARTICLE_CONTENT]
 
 
-def _fetch_and_extract_sync(url: str) -> ExtractedArticle | None:
-    html = _fetch_html_sync(url)
+def _fetch_and_extract_sync(url: str, budget: "_ZyteBudget | None" = None) -> ExtractedArticle | None:
+    html = _fetch_html_sync(url, budget)
     if not html:
         return None
 
-    content = _extract_trafilatura(html, url)
+    title = ""
+    content, title = _extract_trafilatura(html, url)
     if not content:
         content = _extract_readability(html)
     if not content:
@@ -213,15 +244,6 @@ def _fetch_and_extract_sync(url: str) -> ExtractedArticle | None:
 
     content = clean_content(content)
 
-    title = ""
-    try:
-        from trafilatura import bare_extraction
-        result = bare_extraction(html, url=url, favor_precision=True)
-        if result:
-            title = result.get("title", "") or ""
-    except Exception:
-        pass
-
     return ExtractedArticle(
         title=title,
         content=content,
@@ -230,8 +252,8 @@ def _fetch_and_extract_sync(url: str) -> ExtractedArticle | None:
     )
 
 
-async def fetch_and_extract(url: str) -> ExtractedArticle | None:
+async def fetch_and_extract(url: str, budget: "_ZyteBudget | None" = None) -> ExtractedArticle | None:
     if not is_safe_url(url):
         logger.warning("Blocked unsafe URL: %s", url)
         return None
-    return await asyncio.to_thread(_fetch_and_extract_sync, url)
+    return await asyncio.to_thread(_fetch_and_extract_sync, url, budget)

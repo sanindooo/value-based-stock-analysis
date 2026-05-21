@@ -10,6 +10,7 @@ from app.models.screening import ScreeningRun, ScreeningResult  # noqa: F401
 from app.models.research import ResearchReport  # noqa: F401
 from app.models.preference import PortfolioPreference  # noqa: F401
 from app.models.task import TaskStatus  # noqa: F401
+from app.models.analysis import StockAnalysis  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url_sync)

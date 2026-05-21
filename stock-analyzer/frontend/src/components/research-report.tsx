@@ -81,10 +81,10 @@ export default function ResearchReport({
               day: "numeric",
             })}
           </p>
-          <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
             mode === "preservation"
-              ? "bg-emerald-50 text-emerald-700"
-              : "bg-gray-100 text-gray-600"
+              ? "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200"
+              : "bg-blue-100 text-blue-800 ring-1 ring-blue-200"
           }`}>
             {mode === "preservation" ? "Value + Preservation" : "Value"}
           </span>

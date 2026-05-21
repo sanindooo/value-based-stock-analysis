@@ -136,7 +136,7 @@ export default function ProgressPanel({
       )}
 
       {/* Activity log */}
-      {progressData && progressData.log_entries.length > 0 && (
+      {progressData && progressData.log_entries?.length > 0 && (
         <div className="max-h-32 overflow-y-auto rounded-lg bg-gray-50 px-3 py-2">
           {progressData.log_entries.map((entry, i) => (
             <div key={i} className="text-xs text-gray-600">

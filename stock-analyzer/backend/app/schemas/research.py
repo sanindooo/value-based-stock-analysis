@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 
 class ResearchRunRequest(BaseModel):
     stock_tickers: list[str] = Field(..., min_length=1, max_length=20)
+    mode: Literal["value", "preservation"] = "value"
 
 
 class ResearchTaskInfo(BaseModel):
@@ -35,6 +36,7 @@ class ResearchReportOut(BaseModel):
 class ResearchReportSummary(BaseModel):
     id: int
     stock_ticker: str
+    mode: str = "value"
     created_at: datetime
     verdict: str | None = None
     confidence: str | None = None

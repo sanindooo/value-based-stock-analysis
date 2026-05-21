@@ -1,5 +1,6 @@
 "use client"
 
+import { scoreColor } from "@/lib/score-utils"
 import MetricBadge from "./metric-badge"
 
 export interface StockResult {
@@ -20,12 +21,6 @@ interface StockCardProps {
   onToggle: (id: number) => void
   action?: React.ReactNode
   showPreservation?: boolean
-}
-
-function scoreColor(score: number): string {
-  if (score >= 70) return "text-green-700 bg-green-50 border-green-200"
-  if (score >= 40) return "text-yellow-700 bg-yellow-50 border-yellow-200"
-  return "text-red-700 bg-red-50 border-red-200"
 }
 
 function sectorBadge(sector: string | undefined): string {
@@ -122,20 +117,25 @@ export default function StockCard({ stock, selected, onToggle, action, showPrese
 
         {/* Scores */}
         <div className="flex shrink-0 flex-col items-end gap-1">
-          <div
-            className={`flex h-12 w-12 items-center justify-center rounded-lg border text-base font-bold tabular-nums ${scoreColor(stock.composite_score)}`}
-            aria-label={`Composite score: ${stock.composite_score.toFixed(0)}`}
-          >
-            {stock.composite_score.toFixed(0)}
+          <div className="flex flex-col items-center">
+            <span className="text-[9px] font-medium leading-none text-gray-400">Value</span>
+            <div
+              className={`flex h-12 w-12 items-center justify-center rounded-lg border text-base font-bold tabular-nums ${scoreColor(stock.composite_score)}`}
+              aria-label={`Composite score: ${stock.composite_score.toFixed(0)}`}
+            >
+              {stock.composite_score.toFixed(0)}
+            </div>
           </div>
           {showPreservation && stock.preservation_score != null && (
-            <div
-              className={`flex h-8 w-8 items-center justify-center rounded-md border text-xs font-bold tabular-nums ${scoreColor(stock.preservation_score)}`}
-              aria-label={`Preservation score: ${stock.preservation_score.toFixed(0)}`}
-              title="Preservation score"
-            >
-              <span className="text-[8px] font-medium leading-none opacity-60">P</span>
-              {stock.preservation_score.toFixed(0)}
+            <div className="flex flex-col items-center">
+              <span className="text-[9px] font-medium leading-none text-emerald-500">Pres.</span>
+              <div
+                className={`flex h-8 w-8 items-center justify-center rounded-md border text-xs font-bold tabular-nums ${scoreColor(stock.preservation_score)}`}
+                aria-label={`Preservation score: ${stock.preservation_score.toFixed(0)}`}
+                title="Preservation score"
+              >
+                {stock.preservation_score.toFixed(0)}
+              </div>
             </div>
           )}
         </div>

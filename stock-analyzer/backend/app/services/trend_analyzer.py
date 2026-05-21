@@ -59,10 +59,12 @@ def _fetch_trends_sync(ticker: str) -> dict[str, Any]:
                     if revenue_values[i + 1] and revenue_values[i + 1] > 0:
                         rate = (revenue_values[i] - revenue_values[i + 1]) / revenue_values[i + 1]
                         growth_rates.append(rate)
-                if growth_rates:
+                if len(growth_rates) >= 2:
                     mean_growth = sum(growth_rates) / len(growth_rates)
-                    variance = sum((r - mean_growth) ** 2 for r in growth_rates) / len(growth_rates)
+                    variance = sum((r - mean_growth) ** 2 for r in growth_rates) / (len(growth_rates) - 1)
                     revenue_consistency = round(math.sqrt(variance) * 100, 2)
+                elif len(growth_rates) == 1:
+                    revenue_consistency = 0.0
         else:
             warnings.append("no_financials")
     except Exception as exc:
@@ -99,4 +101,14 @@ def _fetch_trends_sync(ticker: str) -> dict[str, Any]:
 
 
 async def fetch_trends(ticker: str) -> dict[str, Any]:
-    return await asyncio.to_thread(_fetch_trends_sync, ticker)
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(_fetch_trends_sync, ticker), timeout=60)
+    except asyncio.TimeoutError:
+        logger.warning("yfinance fetch timed out for %s after 60s", ticker)
+        return {
+            "margin_history": [],
+            "dividend_growth_streak": 0,
+            "revenue_consistency": None,
+            "years_of_data": 0,
+            "data_warnings": ["fetch_timeout"],
+        }

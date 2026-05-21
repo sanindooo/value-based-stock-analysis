@@ -12,6 +12,7 @@ import { SkeletonCard } from "@/components/Skeleton"
 interface ReportSummary {
   id: number
   stock_ticker: string
+  mode: string
   created_at: string
   verdict: string | null
   confidence: string | null
@@ -370,13 +371,22 @@ export default function ResearchPage() {
               {reports.map((report) => (
                 <Link
                   key={report.id}
-                  href={`/research/${report.stock_ticker}`}
+                  href={`/research/${report.stock_ticker}?mode=${report.mode}`}
                   className="flex flex-col justify-between rounded-xl border border-gray-200 bg-white p-5 transition-colors hover:border-gray-300 hover:bg-gray-50"
                 >
                   <div>
-                    <p className="text-sm font-semibold text-gray-900">
-                      {report.stock_ticker}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-gray-900">
+                        {report.stock_ticker}
+                      </p>
+                      <span className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                        report.mode === "preservation"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-blue-100 text-blue-700"
+                      }`}>
+                        {report.mode === "preservation" ? "Pres." : "Value"}
+                      </span>
+                    </div>
                     <p className="mt-0.5 text-xs text-gray-500">
                       {formatDate(report.created_at)}
                     </p>
@@ -401,18 +411,27 @@ export default function ResearchPage() {
               {reports.map((report, i) => (
                 <Link
                   key={report.id}
-                  href={`/research/${report.stock_ticker}`}
+                  href={`/research/${report.stock_ticker}?mode=${report.mode}`}
                   className={`flex items-center justify-between px-5 py-3 transition-colors hover:bg-gray-50 ${
                     i < reports.length - 1 ? "border-b border-gray-100" : ""
                   }`}
                 >
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      {report.stock_ticker}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {formatDate(report.created_at)}
-                    </p>
+                  <div className="flex items-center gap-2">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">
+                        {report.stock_ticker}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {formatDate(report.created_at)}
+                      </p>
+                    </div>
+                    <span className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                      report.mode === "preservation"
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-blue-100 text-blue-700"
+                    }`}>
+                      {report.mode === "preservation" ? "Pres." : "Value"}
+                    </span>
                   </div>
                   <div className="flex items-center gap-4">
                     {report.verdict && report.confidence ? (

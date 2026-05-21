@@ -37,6 +37,7 @@ export default function ScreeningPage() {
   const [maxMatches, setMaxMatches] = useState("")
   const [preservationEnabled, setPreservationEnabled] = useState(false)
   const [prefsLoaded, setPrefsLoaded] = useState(false)
+  const [bannerDismissed, setBannerDismissed] = useState(false)
 
   const { registerTask, activeScreeningTask, lastCompletedTask } = useTaskContext()
 
@@ -92,6 +93,7 @@ export default function ScreeningPage() {
         method: "POST",
         body: JSON.stringify(body),
       })
+      setBannerDismissed(false)
       registerTask(data.task_id)
     } catch (err) {
       const msg = err instanceof Error && err.message.includes("409")
@@ -223,16 +225,22 @@ export default function ScreeningPage() {
                 className="mt-1 block w-32 rounded-md border border-gray-200 px-3 py-1.5 text-sm"
               />
             </div>
-            <label className="flex items-center gap-2 pb-1 text-sm text-gray-600">
-              <input
-                type="checkbox"
-                checked={preservationEnabled}
-                onChange={(e) => setPreservationEnabled(e.target.checked)}
+            <div className="flex items-center gap-2 pb-1">
+              <button
+                role="switch"
+                aria-checked={preservationEnabled}
+                onClick={() => setPreservationEnabled(v => !v)}
                 disabled={!prefsLoaded}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              Preservation scores
-            </label>
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors disabled:opacity-50 ${
+                  preservationEnabled ? "bg-emerald-500" : "bg-gray-200"
+                }`}
+              >
+                <span className={`pointer-events-none inline-block h-4 w-4 translate-y-0.5 rounded-full bg-white shadow transition-transform ${
+                  preservationEnabled ? "translate-x-4" : "translate-x-0.5"
+                }`} />
+              </button>
+              <span className="text-sm text-gray-600">Preservation scores</span>
+            </div>
           </div>
         )}
       </div>
@@ -259,7 +267,7 @@ export default function ScreeningPage() {
           </div>
         </div>
       )}
-      {!activeScreeningTask && lastCompletedTask && lastCompletedTask.result_id && (
+      {!activeScreeningTask && lastCompletedTask && lastCompletedTask.result_id && !bannerDismissed && (
         <div className="mb-6 flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 px-5 py-3">
           <span className="text-sm text-green-700">
             {lastCompletedTask.status === "completed" ? "Screening complete" : lastCompletedTask.status === "failed" ? "Screening failed" : "Screening cancelled"}
@@ -272,6 +280,15 @@ export default function ScreeningPage() {
               View Results
             </Link>
           )}
+          <button
+            onClick={() => setBannerDismissed(true)}
+            className="ml-auto text-green-600 hover:text-green-800"
+            aria-label="Dismiss"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
       )}
 

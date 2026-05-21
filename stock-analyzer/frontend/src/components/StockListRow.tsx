@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { scoreColor } from "@/lib/score-utils"
 
 export interface StockListItem {
   id: number
@@ -23,12 +24,6 @@ interface StockListRowProps {
   onReject?: () => void
   onUnreject?: () => void
   showPreservation?: boolean
-}
-
-function scoreColor(score: number): string {
-  if (score >= 70) return "text-green-700 bg-green-50"
-  if (score >= 40) return "text-yellow-700 bg-yellow-50"
-  return "text-red-700 bg-red-50"
 }
 
 const KEY_METRICS: { key: string; label: string; suffix?: string }[] = [
@@ -176,9 +171,9 @@ export default function StockListRow({ stock, onClick, selected, onToggle, resea
         ) : null}
       </div>
 
-      <div className="hidden flex-1 items-center gap-4 sm:flex">
+      <div className="hidden flex-1 items-center gap-3 sm:flex">
         {KEY_METRICS.map(({ key, label, suffix }) => (
-          <div key={key} className="text-center">
+          <div key={key} className="min-w-0 flex-1 text-center">
             <span className="block text-xs text-gray-400">{label}</span>
             <span className="text-sm tabular-nums text-gray-700">
               {formatMetric(metrics[key], suffix)}
@@ -187,30 +182,37 @@ export default function StockListRow({ stock, onClick, selected, onToggle, resea
         ))}
       </div>
 
-      {stock.stage && (
-        <span className={`hidden shrink-0 rounded-full px-2 py-0.5 text-xs font-medium sm:inline-block ${
-          stock.stage === "researched" ? "bg-green-50 text-green-700" :
-          stock.stage === "researching" ? "bg-blue-50 text-blue-700" :
-          stock.stage === "rejected" ? "bg-red-50 text-red-700" :
-          "bg-gray-100 text-gray-600"
-        }`}>
-          {stock.stage}
-        </span>
-      )}
+      <div className="hidden w-20 shrink-0 text-center sm:block">
+        {stock.stage && (
+          <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+            stock.stage === "researched" ? "bg-green-50 text-green-700" :
+            stock.stage === "researching" ? "bg-blue-50 text-blue-700" :
+            stock.stage === "rejected" ? "bg-red-50 text-red-700" :
+            "bg-gray-100 text-gray-600"
+          }`}>
+            {stock.stage}
+          </span>
+        )}
+      </div>
 
       <div className="hidden shrink-0 sm:flex">{actionContent}</div>
 
-      <div
-        className={`flex h-8 w-10 shrink-0 items-center justify-center rounded-md text-sm font-bold tabular-nums ${scoreColor(stock.composite_score)}`}
-      >
-        {stock.composite_score.toFixed(0)}
+      <div className="flex shrink-0 flex-col items-center" title="Composite score">
+        <span className="text-[9px] font-medium leading-none text-gray-400">V</span>
+        <div
+          className={`flex h-8 w-10 items-center justify-center rounded-md text-sm font-bold tabular-nums ${scoreColor(stock.composite_score)}`}
+        >
+          {stock.composite_score.toFixed(0)}
+        </div>
       </div>
       {showPreservation && stock.preservation_score != null && (
-        <div
-          className={`flex h-8 w-10 shrink-0 items-center justify-center rounded-md text-sm font-bold tabular-nums ${scoreColor(stock.preservation_score)}`}
-          title="Preservation score"
-        >
-          {stock.preservation_score.toFixed(0)}
+        <div className="flex shrink-0 flex-col items-center" title="Preservation score">
+          <span className="text-[9px] font-medium leading-none text-gray-400">P</span>
+          <div
+            className={`flex h-8 w-10 items-center justify-center rounded-md text-sm font-bold tabular-nums ${scoreColor(stock.preservation_score)}`}
+          >
+            {stock.preservation_score.toFixed(0)}
+          </div>
         </div>
       )}
       <svg className="h-4 w-4 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">

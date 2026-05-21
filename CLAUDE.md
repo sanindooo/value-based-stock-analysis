@@ -41,6 +41,9 @@ When creating a new execution script, always start by copying `execution/_templa
 **4. Update directives as you learn**
 Directives are living documents. When you discover API constraints, better approaches, common errors, or timing expectations—update the directive. But don't create or overwrite directives without asking unless explicitly told to. Directives are your instruction set and must be preserved (and improved upon over time, not extemporaneously used and then discarded).
 
+**5. Flag database migrations**
+When adding or modifying Alembic migrations, always remind the user to run `docker compose exec backend alembic upgrade head` against the Docker environment. Schema changes that work locally won't be applied to the Docker Postgres volume automatically — the migration must be run explicitly or the app will crash on startup.
+
 ## Self-annealing loop
 
 Errors are learning opportunities. When something breaks:

@@ -204,9 +204,9 @@ async def get_screening_results(
     # Fetch page
     sort_col = getattr(ScreeningResult, sort_by)
     if order == "desc":
-        sort_col = sort_col.desc()
+        sort_col = sort_col.desc().nullslast()
     else:
-        sort_col = sort_col.asc()
+        sort_col = sort_col.asc().nullsfirst()
 
     stmt = (
         select(ScreeningResult)
@@ -455,6 +455,34 @@ async def recompute_conviction(run_id: int, db: AsyncSession = Depends(get_db)):
         summary = _generate_summary(metrics, conviction, r.composite_score, DEFAULT_THRESHOLDS)
         r.conviction_data = conviction
         r.summary = summary
+        updated += 1
+
+    await db.commit()
+    return {"updated": updated}
+
+
+@router.post("/runs/{run_id}/compute-preservation", status_code=200)
+async def compute_preservation(run_id: int, db: AsyncSession = Depends(get_db)):
+    """Compute preservation scores for all results in a run using stored metrics."""
+    from app.services.scorer import compute_preservation_score
+
+    run_result = await db.execute(
+        select(ScreeningRun).where(ScreeningRun.id == run_id)
+    )
+    if run_result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail=f"Screening run {run_id} not found")
+
+    results = (
+        await db.execute(
+            select(ScreeningResult).where(ScreeningResult.screening_run_id == run_id)
+        )
+    ).scalars().all()
+
+    updated = 0
+    for r in results:
+        metrics = dict(r.metric_snapshot or {})
+        score = compute_preservation_score(metrics)
+        r.preservation_score = score
         updated += 1
 
     await db.commit()

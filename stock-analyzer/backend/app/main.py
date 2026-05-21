@@ -21,8 +21,10 @@ async def lifespan(app: FastAPI):
     async with async_session() as db:
         result = await db.execute(
             update(TaskStatus)
-            .where(TaskStatus.status.in_(["pending", "running"]))
-            .values(status="failed", error_message="Server restarted during execution.")
+            .where(
+                TaskStatus.status.in_(["pending", "running"]),
+            )
+            .values(status="failed", error_message="Server restarted — task was interrupted.")
         )
         if result.rowcount > 0:
             logger.warning("Marked %d orphaned tasks as failed on startup", result.rowcount)

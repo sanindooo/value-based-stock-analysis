@@ -12,13 +12,13 @@ import pytest
 from app.services.article_extractor import (
     ExtractedArticle,
     clean_content,
+    create_zyte_budget,
     is_safe_url,
     _extract_trafilatura,
     _extract_readability,
     _extract_bs4,
     _fetch_html_sync,
     _fetch_via_zyte_sync,
-    _reset_zyte_budget,
 )
 
 
@@ -83,9 +83,9 @@ class TestCleanContent:
 class TestExtractionTiers:
     def test_trafilatura_extracts_text(self):
         html = "<html><body><article><p>This is a sufficiently long article content that exceeds the minimum threshold of one hundred characters for extraction to succeed.</p></article></body></html>"
-        result = _extract_trafilatura(html, "http://example.com")
-        if result:
-            assert len(result) >= 100
+        content, title = _extract_trafilatura(html, "http://example.com")
+        if content:
+            assert len(content) >= 100
 
     def test_readability_extracts_text(self):
         html = """<html><head><title>Test</title></head><body>
@@ -114,7 +114,9 @@ class TestExtractionTiers:
 
 
 class TestZyteBudget:
-    def test_budget_resets(self):
-        _reset_zyte_budget()
-        from app.services.article_extractor import _zyte_budget_used
-        assert _zyte_budget_used == 0
+    def test_budget_cap_enforced(self):
+        budget = create_zyte_budget()
+        budget._cap = 2
+        assert budget.try_consume() is True
+        assert budget.try_consume() is True
+        assert budget.try_consume() is False

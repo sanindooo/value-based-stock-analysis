@@ -29,11 +29,11 @@ router = APIRouter()
 # Background task wrapper
 # ---------------------------------------------------------------------------
 
-async def _run_research_task(task_id: int, ticker: str) -> None:
+async def _run_research_task(task_id: int, ticker: str, mode: str = "value") -> None:
     """Background task wrapper — opens its own DB session."""
     async with async_session() as db:
         try:
-            await run_research_for_ticker(db, ticker, task_id)
+            await run_research_for_ticker(db, ticker, task_id, mode=mode)
         except Exception:
             logger.exception("Research task %d failed for %s", task_id, ticker)
             # Task is already marked failed inside run_research_for_ticker,
@@ -66,6 +66,20 @@ async def start_research_run(
 
     for ticker in body.stock_tickers:
         ticker_upper = ticker.upper().strip()
+
+        active = await db.execute(
+            select(TaskStatus).where(
+                TaskStatus.task_type == "research",
+                TaskStatus.status.in_(["pending", "running"]),
+                TaskStatus.description == ticker_upper,
+            )
+        )
+        if active.scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Research already running for {ticker_upper}",
+            )
+
         task = TaskStatus(
             task_type="research",
             status="pending",
@@ -76,7 +90,7 @@ async def start_research_run(
         await db.commit()
         await db.refresh(task)
 
-        background_tasks.add_task(_run_research_task, task_id=task.id, ticker=ticker_upper)
+        background_tasks.add_task(_run_research_task, task_id=task.id, ticker=ticker_upper, mode=body.mode)
         tasks_info.append(ResearchTaskInfo(ticker=ticker_upper, task_id=task.id))
 
     return ResearchRunResponse(tasks=tasks_info)
@@ -122,6 +136,7 @@ async def list_reports(
             ResearchReportSummary(
                 id=r.id,
                 stock_ticker=r.stock_ticker,
+                mode=getattr(r, "mode", "value"),
                 created_at=r.created_at,
                 verdict=verdict,
                 confidence=conf,
@@ -129,11 +144,12 @@ async def list_reports(
         )
 
     if deduplicated:
-        seen: set[str] = set()
+        seen: set[tuple[str, str]] = set()
         deduped: list[ResearchReportSummary] = []
         for s in summaries:
-            if s.stock_ticker not in seen:
-                seen.add(s.stock_ticker)
+            key = (s.stock_ticker, s.mode)
+            if key not in seen:
+                seen.add(key)
                 deduped.append(s)
         summaries = deduped
 

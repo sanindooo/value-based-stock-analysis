@@ -88,6 +88,6 @@ async def discover_articles(
                     seen_urls.add(article.url)
                     all_articles.append(article)
         except Exception as exc:
-            logger.warning("SerpApi search failed for query '%s': %s", query, exc)
+            logger.warning("SerpApi search failed for query '%s': %s", query, type(exc).__name__)
 
     return all_articles[:MAX_RESULTS]

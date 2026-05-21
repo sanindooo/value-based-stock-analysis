@@ -98,7 +98,13 @@ async def fetch_news(
     Wraps the synchronous Finnhub client in asyncio.to_thread().
     """
     try:
-        return await asyncio.to_thread(_fetch_news_sync, ticker, months_back, api_key)
+        return await asyncio.wait_for(
+            asyncio.to_thread(_fetch_news_sync, ticker, months_back, api_key),
+            timeout=30,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Finnhub news fetch timed out for %s after 30s", ticker)
+        return []
     except Exception as exc:
         logger.error("News fetch failed for %s: %s", ticker, exc)
         return []

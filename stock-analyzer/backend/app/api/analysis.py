@@ -14,7 +14,7 @@ from app.db import async_session, get_db
 from app.models.analysis import StockAnalysis
 from app.models.research import ResearchReport
 from app.models.task import TaskStatus
-from app.schemas.analysis import AnalysisRunRequest, StockAnalysisOut
+from app.schemas.analysis import AnalysisRunRequest, StockAnalysisOut, TickerAnalysesResponse
 from app.schemas.research import ResearchReportOut
 from app.schemas.screening import TaskStatusOut
 
@@ -105,7 +105,7 @@ async def _run_standard_analysis_task(task_id: int, ticker: str, mode: str) -> N
                 task = result.scalar_one_or_none()
                 if task and task.status not in ("completed", "cancelled"):
                     task.status = "failed"
-                    task.error_message = str(exc)[:1000]
+                    task.error_message = "Analysis failed — check server logs."
                     await err_db.commit()
 
 
@@ -148,7 +148,7 @@ async def start_standard_analysis(
     return TaskStatusOut.model_validate(task)
 
 
-@router.get("/{ticker}")
+@router.get("/{ticker}", response_model=TickerAnalysesResponse)
 async def get_analyses_for_ticker(
     ticker: str,
     db: AsyncSession = Depends(get_db),
@@ -159,6 +159,7 @@ async def get_analyses_for_ticker(
         select(StockAnalysis)
         .where(StockAnalysis.stock_ticker == ticker)
         .order_by(StockAnalysis.created_at.desc())
+        .limit(20)
     )
     standard_analyses = [
         StockAnalysisOut.model_validate(r) for r in standard_results.scalars().all()
@@ -168,6 +169,7 @@ async def get_analyses_for_ticker(
         select(ResearchReport)
         .where(ResearchReport.stock_ticker == ticker)
         .order_by(ResearchReport.created_at.desc())
+        .limit(20)
     )
     deep_analyses = [
         ResearchReportOut.model_validate(r) for r in deep_results.scalars().all()

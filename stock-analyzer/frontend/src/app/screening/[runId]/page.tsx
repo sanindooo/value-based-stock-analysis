@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 import StockCard, { type StockResult } from "@/components/stock-card";
 import StockListRow from "@/components/StockListRow";
@@ -93,6 +94,7 @@ export default function ScreeningResultsPage() {
 	const [total, setTotal] = useState(0);
 	const [loading, setLoading] = useState(true);
 	const [recomputing, setRecomputing] = useState(false);
+	const [computingPres, setComputingPres] = useState(false);
 
 	const [sortBy, setSortBy] = useState("composite_score");
 	const [order, setOrder] = useState<"asc" | "desc">("desc");
@@ -161,23 +163,24 @@ export default function ScreeningResultsPage() {
 	// -----------------------------------------------------------------------
 	// Fetch results once we have a runId
 	// -----------------------------------------------------------------------
-	const fetchResults = useCallback(async () => {
+	const fetchResults = useCallback(async (opts?: { silent?: boolean }) => {
 		if (runId === null) return;
-		setLoading(true);
+		if (!opts?.silent) setLoading(true);
 		try {
-			const qs = new URLSearchParams({
+			const params = new URLSearchParams({
 				sort_by: sortBy,
 				order,
 				limit: "200",
 				offset: "0",
-			}).toString();
-			const data = await apiFetch<ResultsPage>(`/screening/${runId}?${qs}`);
+			});
+			if (opts?.silent) params.set("poll", "1");
+			const data = await apiFetch<ResultsPage>(`/screening/${runId}?${params.toString()}`);
 			setResults(data.results);
 			setTotal(data.total);
 		} catch {
 			setTaskError("Failed to load results");
 		} finally {
-			setLoading(false);
+			if (!opts?.silent) setLoading(false);
 		}
 	}, [runId, sortBy, order]);
 
@@ -190,7 +193,7 @@ export default function ScreeningResultsPage() {
 		setRecomputing(true);
 		try {
 			await apiFetch(`/screening/runs/${runId}/recompute`, { method: "POST" });
-			await fetchResults();
+			await fetchResults({ silent: true });
 		} catch {
 			setTaskError("Failed to recompute");
 		} finally {
@@ -406,6 +409,21 @@ export default function ScreeningResultsPage() {
 		await triggerResearch([stock.id]);
 	}
 
+	async function computePreservation() {
+		if (runId === null) return;
+		setComputingPres(true);
+		try {
+			const data = await apiFetch<{ updated: number }>(`/screening/runs/${runId}/compute-preservation`, { method: "POST" });
+			await fetchResults({ silent: true });
+			setShowPreservation(true);
+			toast.success(`Preservation scores computed for ${data.updated} stocks`);
+		} catch {
+			toast.error("Failed to compute preservation scores");
+		} finally {
+			setComputingPres(false);
+		}
+	}
+
 	// -----------------------------------------------------------------------
 	// Render
 	// -----------------------------------------------------------------------
@@ -540,7 +558,7 @@ export default function ScreeningResultsPage() {
 
 			{/* Controls */}
 			<div className="mb-6 rounded-xl border border-gray-200 bg-white">
-				<div className="flex flex-wrap items-center gap-4 px-5 py-3">
+				<div className="flex flex-wrap items-center gap-3 px-5 py-3">
 					{/* Ticker search */}
 					<input
 						type="text"
@@ -564,7 +582,7 @@ export default function ScreeningResultsPage() {
 							onChange={(e) => setSortBy(e.target.value)}
 							className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700"
 						>
-							{SORT_OPTIONS.map((opt) => (
+							{SORT_OPTIONS.filter((opt) => opt.value !== "preservation_score" || hasPreservationScores).map((opt) => (
 								<option key={opt.value} value={opt.value}>
 									{opt.label}
 								</option>
@@ -607,36 +625,65 @@ export default function ScreeningResultsPage() {
 						{recomputing ? "Recomputing..." : "Refresh scores"}
 					</button>
 
-					{/* View toggle / Select all / Show rejected */}
-					<div className="ml-auto flex items-center gap-4">
-						<ViewToggle storageKey="screening-results-view" onChange={setView} />
-						{hasPreservationScores && (
-							<label className="flex items-center gap-2 text-sm text-gray-600">
-								<input
-									type="checkbox"
-									checked={showPreservation}
-									onChange={() => setShowPreservation((v) => !v)}
-									className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-								/>
-								Preservation
-							</label>
-						)}
-						<label className="flex items-center gap-2 text-sm text-gray-600">
-							<input
-								type="checkbox"
-								checked={showRejected}
-								onChange={() => setShowRejected((v) => !v)}
-								className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-							/>
-							Show rejected
-						</label>
+					{/* Compute preservation scores */}
+					{!hasPreservationScores && (
 						<button
-							onClick={toggleSelectAll}
-							className="text-sm font-medium text-blue-600 hover:text-blue-700"
+							onClick={computePreservation}
+							disabled={computingPres}
+							className="flex items-center gap-1 rounded-lg border border-emerald-200 px-3 py-1.5 text-sm text-emerald-600 transition-colors hover:bg-emerald-50 disabled:opacity-50"
+							title="Compute preservation scores for all stocks using existing metrics"
 						>
+							<svg className={`h-3.5 w-3.5 ${computingPres ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+							</svg>
+							{computingPres ? "Computing..." : "Preservation scores"}
+						</button>
+					)}
+				</div>
+
+				{/* View controls row */}
+				<div className="flex flex-wrap items-center gap-4 border-t border-gray-100 px-5 py-2.5">
+					<ViewToggle storageKey="screening-results-view" onChange={setView} />
+					{hasPreservationScores && (
+						<div className="flex items-center gap-2">
+							<button
+								role="switch"
+								aria-checked={showPreservation}
+								onClick={() => setShowPreservation((v) => !v)}
+								className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors ${
+									showPreservation ? "bg-emerald-500" : "bg-gray-200"
+								}`}
+							>
+								<span className={`pointer-events-none inline-block h-4 w-4 translate-y-0.5 rounded-full bg-white shadow transition-transform ${
+									showPreservation ? "translate-x-4" : "translate-x-0.5"
+								}`} />
+							</button>
+							<span className="text-sm text-gray-600">Preservation</span>
+							<span className="relative group">
+								<svg className="h-3.5 w-3.5 cursor-help text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+									<path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
+								</svg>
+								<span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-64 -translate-x-1/2 rounded-lg bg-gray-900 px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
+									<span className="font-semibold">Preservation Mode</span> evaluates how well a stock protects your wealth against inflation. It scores four dimensions: pricing power (can the company raise prices?), dividend sustainability (reliable income stream?), earnings stability (consistent performance?), and capital efficiency (strong returns on invested capital?). Toggle this to show/hide the P score column.
+								</span>
+							</span>
+						</div>
+					)}
+					<label className="flex items-center gap-2 text-sm text-gray-600">
+						<input
+							type="checkbox"
+							checked={showRejected}
+							onChange={() => setShowRejected((v) => !v)}
+							className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+						/>
+						Show rejected
+					</label>
+					<button
+						onClick={toggleSelectAll}
+						className="text-sm font-medium text-blue-600 hover:text-blue-700"
+					>
 						{allVisibleSelected ? "Deselect all" : "Select all"}
 					</button>
-				</div>
 				</div>
 
 				{/* Advanced filters */}
@@ -822,6 +869,7 @@ export default function ScreeningResultsPage() {
 				<StockDetailModal
 					stock={selectedStock}
 					onClose={() => setSelectedStock(null)}
+					onStageChange={() => fetchResults({ silent: true })}
 				/>
 			)}
 

@@ -22,6 +22,7 @@ tags:
 related_components:
   - service_object
   - background_job
+last_updated: 2026-05-17
 ---
 
 # Next.js Tag-Based Cache Revalidation Strategy
@@ -134,9 +135,30 @@ if (res.ok) {
 }
 ```
 
-### Conditional Invalidation
+### Poll Parameter for Cache Bypass
 
-The research active-tasks endpoint invalidates the reports cache only when no active tasks remain:
+When background tasks mutate data that a cached endpoint serves, polling requests must bypass the cache. Use a query parameter to signal real-time mode:
+
+```typescript
+export async function GET(request: NextRequest, { params }: { params: Promise<{ runId: string }> }) {
+  const { runId } = await params
+  const { searchParams } = new URL(request.url)
+  const poll = searchParams.get("poll")
+
+  const fetchOptions: RequestInit = poll
+    ? { cache: "no-store", headers: { "Content-Type": "application/json" } }
+    : { cache: "force-cache", next: { tags: [`screening-run-${runId}`], revalidate: 3600 }, headers: { "Content-Type": "application/json" } }
+
+  const res = await backendFetch(path, fetchOptions)
+  // ...
+}
+```
+
+Normal page loads still cache. Polling passes `poll=1` and gets fresh data every time.
+
+### Aggressive Invalidation During Active Polling
+
+The research active-tasks endpoint always invalidates the reports cache during polling — background tasks create reports without going through the Next.js cache layer:
 
 ```typescript
 export async function GET() {
@@ -145,14 +167,14 @@ export async function GET() {
     headers: { "Content-Type": "application/json" },
   })
   const data = await res.json()
-  if (res.ok && Array.isArray(data) && data.length === 0) {
+  if (res.ok) {
     revalidateTag("research-reports", "max")
   }
   return NextResponse.json(data, { status: res.status })
 }
 ```
 
-This ensures completed reports appear immediately when the last task finishes.
+This ensures completed reports appear as each task finishes, not only when the last task completes. See [[research-status-cache-invalidation-2026-05-17]] for the bug this fixed.
 
 ## Why This Matters
 

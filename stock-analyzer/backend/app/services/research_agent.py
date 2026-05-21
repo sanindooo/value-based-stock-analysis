@@ -22,7 +22,7 @@ from app.core.config import settings
 from app.models.research import ResearchReport
 from app.models.screening import ScreeningResult
 from app.models.task import TaskStatus
-from app.services.article_extractor import ExtractedArticle, fetch_and_extract, _reset_zyte_budget
+from app.services.article_extractor import ExtractedArticle, fetch_and_extract, create_zyte_budget
 from app.services.edgar_client import fetch_filing_sections
 from app.services.news_client import fetch_news
 from app.services.news_discovery import discover_articles
@@ -91,15 +91,14 @@ Guidelines:
 
 MAX_ARTICLE_PROMPT_CHARS = 5000
 
+_INJECTION_PATTERN = re.compile(
+    r"(?i)(ignore\s+(all\s+)?previous\s+instructions|you\s+are\s+now|system\s*:|<\s*/?\s*system\s*>)",
+)
 
-def _sanitize_article_content(content: str) -> str:
+
+def _sanitize_text(text: str, max_len: int = MAX_ARTICLE_PROMPT_CHARS) -> str:
     """Strip injection patterns and cap length."""
-    content = re.sub(
-        r"(?i)(ignore\s+(all\s+)?previous\s+instructions|you\s+are\s+now|system\s*:)",
-        "",
-        content,
-    )
-    return content[:MAX_ARTICLE_PROMPT_CHARS]
+    return _INJECTION_PATTERN.sub("", text)[:max_len]
 
 
 def _build_user_prompt(
@@ -142,11 +141,13 @@ def _build_user_prompt(
     if full_articles:
         parts.append(f"\n### Full News Articles ({len(full_articles)} articles)")
         for article in full_articles:
-            sanitized = _sanitize_article_content(article.content)
+            sanitized = _sanitize_text(article.content)
+            title = _sanitize_text(article.title, 200)
+            date = _sanitize_text(article.publication_date, 50)
             parts.append(
                 f"\n<article>\n"
-                f"Title: {article.title}\n"
-                f"Date: {article.publication_date}\n\n"
+                f"Title: {title}\n"
+                f"Date: {date}\n\n"
                 f"{sanitized}\n"
                 f"</article>"
             )
@@ -164,6 +165,7 @@ def _call_claude_sync(user_prompt: str, api_key: str | None = None, mode: str = 
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
         max_tokens=4096,
+        timeout=120,
         system=[
             {
                 "type": "text",
@@ -229,20 +231,29 @@ async def run_research_for_ticker(
             # Step 3b: Deep analysis — discover and extract full articles
             full_articles: list[ExtractedArticle] = []
             await _update_task_progress(db, task_id, "fetching_articles")
-            _reset_zyte_budget()
+            budget = create_zyte_budget()
             discovered = await discover_articles(ticker, company_name)
-            for discovered_article in discovered:
-                extracted = await fetch_and_extract(discovered_article.url)
+
+            async def _extract_one(disc_article):
+                extracted = await fetch_and_extract(disc_article.url, budget)
                 if extracted:
                     if not extracted.title:
-                        extracted.title = discovered_article.title
+                        extracted.title = disc_article.title
                     if not extracted.publication_date:
-                        extracted.publication_date = discovered_article.published_date
-                    full_articles.append(extracted)
+                        extracted.publication_date = disc_article.published_date
+                return extracted
+
+            results = await asyncio.gather(
+                *[_extract_one(a) for a in discovered],
+                return_exceptions=True,
+            )
+            for result in results:
+                if isinstance(result, ExtractedArticle):
+                    full_articles.append(result)
 
             # Step 4: Build prompt and call Claude
             await _update_task_progress(db, task_id, "analyzing")
-            user_prompt = _build_user_prompt(ticker, filing_data, news_articles, full_articles or None)
+            user_prompt = _build_user_prompt(ticker, filing_data, news_articles, full_articles)
             report_content = await asyncio.to_thread(_call_claude_sync, user_prompt, None, mode)
 
             # Step 5: Store report
@@ -250,16 +261,14 @@ async def run_research_for_ticker(
             sources = {
                 "filing_type": filing_data.filing_type,
                 "filing_date": filing_data.filing_date,
-                "edgar_url": filing_data.edgar_url,
-                "news_count": len(news_articles),
-                "news_sources": [
-                    {"headline": a.headline, "source": a.source, "url": a.url}
+                "filing_url": filing_data.edgar_url,
+                "news_articles": [
+                    {"title": a.headline, "url": a.url, "source": a.source}
                     for a in news_articles
-                ],
-                "articles_count": len(full_articles),
-                "article_sources": [
-                    {"title": a.title, "publication_date": a.publication_date}
+                ] + [
+                    {"title": a.title, "url": ""}
                     for a in full_articles
+                    if a.title
                 ],
             }
 
@@ -296,19 +305,21 @@ async def run_research_for_ticker(
 
         except Exception as exc:
             logger.exception("Research failed for %s (task %d): %s", ticker, task_id, exc)
-            result = await db.execute(select(TaskStatus).where(TaskStatus.id == task_id))
-            task = result.scalar_one_or_none()
-            if task:
-                task.status = "failed"
-                task.error_message = str(exc)[:1000]
+            from app.db import async_session as _async_session
+            async with _async_session() as err_db:
+                result = await err_db.execute(select(TaskStatus).where(TaskStatus.id == task_id))
+                task = result.scalar_one_or_none()
+                if task and task.status not in ("completed", "failed"):
+                    task.status = "failed"
+                    task.error_message = "Research failed — check server logs."
 
-            await db.execute(
-                update(ScreeningResult)
-                .where(
-                    ScreeningResult.stock_ticker == ticker,
-                    ScreeningResult.stage == "researching",
+                await err_db.execute(
+                    update(ScreeningResult)
+                    .where(
+                        ScreeningResult.stock_ticker == ticker,
+                        ScreeningResult.stage == "researching",
+                    )
+                    .values(stage="screened")
                 )
-                .values(stage="screened")
-            )
-            await db.commit()
+                await err_db.commit()
             raise
