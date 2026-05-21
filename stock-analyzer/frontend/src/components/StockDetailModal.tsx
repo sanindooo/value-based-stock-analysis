@@ -52,6 +52,21 @@ function scoreColor(score: number): string {
   return "text-red-700 bg-red-50 border-red-200"
 }
 
+function ModeBadge({ mode }: { mode: string }) {
+  if (mode === "preservation") {
+    return (
+      <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+        Value + Preservation
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+      Value
+    </span>
+  )
+}
+
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
     month: "short",
@@ -112,13 +127,13 @@ export default function StockDetailModal({ stock, onClose, triggerRef }: StockDe
     loadAnalyses()
   }, [loadAnalyses])
 
-  async function triggerStandardAnalysis() {
+  async function triggerStandardAnalysis(analysisMode: string = "value") {
     setTriggerLoading(true)
     setTriggerError(null)
     try {
       const data = await apiFetch<{ id: number; status: string }>(`/analysis?ticker=${stock.stock_ticker}&tier=standard`, {
         method: "POST",
-        body: JSON.stringify({ mode: "value" }),
+        body: JSON.stringify({ mode: analysisMode }),
       })
       setTaskId(data.id)
       setTaskProgress("queued")
@@ -298,7 +313,7 @@ export default function StockDetailModal({ stock, onClose, triggerRef }: StockDe
             <h3 className="text-sm font-semibold text-gray-900">Analysis</h3>
             <div className="flex gap-2">
               <button
-                onClick={triggerStandardAnalysis}
+                onClick={() => triggerStandardAnalysis()}
                 disabled={triggerLoading || taskId !== null}
                 className="rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50 disabled:opacity-50"
               >
@@ -346,6 +361,44 @@ export default function StockDetailModal({ stock, onClose, triggerRef }: StockDe
 
           {selectedAnalysis && (
             <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <ModeBadge mode={selectedAnalysis.mode} />
+                <span className="text-xs text-gray-400">{selectedAnalysis.tier}</span>
+              </div>
+
+              {/* Preservation interpretation (preservation mode only) */}
+              {selectedAnalysis.mode === "preservation" && Boolean(analysisData.pricing_power_signal) && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs">
+                  <h4 className="mb-1 font-medium text-emerald-800">Preservation Signals</h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {Boolean(analysisData.margin_trend) && (
+                      <div>
+                        <span className="text-emerald-600">Margin Trend: </span>
+                        <span className="font-medium text-emerald-800">{String(analysisData.margin_trend)}</span>
+                      </div>
+                    )}
+                    {Boolean(analysisData.pricing_power_signal) && (
+                      <div>
+                        <span className="text-emerald-600">Pricing Power: </span>
+                        <span className="font-medium text-emerald-800">{String(analysisData.pricing_power_signal)}</span>
+                      </div>
+                    )}
+                    {Boolean(analysisData.dividend_reliability) && (
+                      <div>
+                        <span className="text-emerald-600">Dividend Reliability: </span>
+                        <span className="font-medium text-emerald-800">{String(analysisData.dividend_reliability)}</span>
+                      </div>
+                    )}
+                    {Boolean(analysisData.business_resilience) && (
+                      <div>
+                        <span className="text-emerald-600">Business Resilience: </span>
+                        <span className="font-medium text-emerald-800">{String(analysisData.business_resilience)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Margin History */}
               {marginHistory && marginHistory.length > 0 && (
                 <div>
@@ -419,6 +472,21 @@ export default function StockDetailModal({ stock, onClose, triggerRef }: StockDe
             <p className="text-xs text-gray-400">
               No analysis yet. Click &ldquo;Standard Analysis&rdquo; to run one.
             </p>
+          )}
+
+          {/* Lens Switch */}
+          {selectedAnalysis && !triggerLoading && !deepLoading && (
+            <div className="mt-3 border-t border-gray-100 pt-3">
+              <button
+                onClick={() => triggerStandardAnalysis(selectedAnalysis.mode === "preservation" ? "value" : "preservation")}
+                disabled={triggerLoading || taskId !== null}
+                className="text-xs font-medium text-gray-500 transition-colors hover:text-gray-700"
+              >
+                {selectedAnalysis.mode === "preservation"
+                  ? "↻ Run Value-Only Analysis"
+                  : "↻ Run with Preservation Lens"}
+              </button>
+            </div>
           )}
         </div>
 

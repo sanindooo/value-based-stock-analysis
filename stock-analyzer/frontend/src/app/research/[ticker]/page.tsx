@@ -81,6 +81,7 @@ interface FullReport {
   stock_ticker: string
   report_content: Record<string, unknown>
   sources: Record<string, unknown>
+  mode?: string
   created_at: string
 }
 
@@ -369,6 +370,7 @@ export default function ResearchTickerPage() {
             }
           }
           createdAt={report.created_at}
+          mode={report.mode}
         />
       </div>
     </div>

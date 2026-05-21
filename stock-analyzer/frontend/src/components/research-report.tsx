@@ -8,6 +8,10 @@ interface ReportContent {
   financial_health?: string
   growth_trajectory?: string
   key_risks?: string
+  pricing_power_durability?: string
+  dividend_sustainability_under_stress?: string
+  inflation_resilience_assessment?: string
+  competitive_moat_strength?: string
   investment_opinion?: {
     verdict?: string
     confidence?: string
@@ -25,6 +29,7 @@ interface ResearchReportProps {
   reportContent: ReportContent
   sources: Sources
   createdAt: string
+  mode?: string
 }
 
 function Section({
@@ -49,6 +54,7 @@ export default function ResearchReport({
   reportContent,
   sources,
   createdAt,
+  mode = "value",
 }: ResearchReportProps) {
   const opinion = reportContent.investment_opinion || {}
 
@@ -66,14 +72,23 @@ export default function ResearchReport({
           <span className="text-sm text-gray-300">/</span>
           <h1 className="text-2xl font-bold text-gray-900">{ticker}</h1>
         </div>
-        <p className="mt-1 text-sm text-gray-500">
-          Report generated{" "}
-          {new Date(createdAt).toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-          })}
-        </p>
+        <div className="mt-1 flex items-center gap-2">
+          <p className="text-sm text-gray-500">
+            Report generated{" "}
+            {new Date(createdAt).toLocaleDateString("en-US", {
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+            })}
+          </p>
+          <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+            mode === "preservation"
+              ? "bg-emerald-50 text-emerald-700"
+              : "bg-gray-100 text-gray-600"
+          }`}>
+            {mode === "preservation" ? "Value + Preservation" : "Value"}
+          </span>
+        </div>
       </div>
 
       {/* Investment Opinion — prominent at top */}
@@ -133,6 +148,39 @@ export default function ResearchReport({
           <Section title="Key Risks">
             <p className="text-sm leading-relaxed text-gray-700">
               {reportContent.key_risks}
+            </p>
+          </Section>
+        )}
+
+        {/* Preservation-specific sections */}
+        {reportContent.pricing_power_durability && (
+          <Section title="Pricing Power Durability">
+            <p className="text-sm leading-relaxed text-gray-700">
+              {reportContent.pricing_power_durability}
+            </p>
+          </Section>
+        )}
+
+        {reportContent.dividend_sustainability_under_stress && (
+          <Section title="Dividend Sustainability Under Stress">
+            <p className="text-sm leading-relaxed text-gray-700">
+              {reportContent.dividend_sustainability_under_stress}
+            </p>
+          </Section>
+        )}
+
+        {reportContent.inflation_resilience_assessment && (
+          <Section title="Inflation Resilience Assessment">
+            <p className="text-sm leading-relaxed text-gray-700">
+              {reportContent.inflation_resilience_assessment}
+            </p>
+          </Section>
+        )}
+
+        {reportContent.competitive_moat_strength && (
+          <Section title="Competitive Moat Strength">
+            <p className="text-sm leading-relaxed text-gray-700">
+              {reportContent.competitive_moat_strength}
             </p>
           </Section>
         )}

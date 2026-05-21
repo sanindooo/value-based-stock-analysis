@@ -67,6 +67,18 @@ async def _run_standard_analysis_task(task_id: int, ticker: str, mode: str) -> N
                 "news_headlines": headlines,
             }
 
+            if mode == "preservation":
+                margin_history = trend_data.get("margin_history", [])
+                margins = [e["gross_margin"] for e in margin_history if e.get("gross_margin") is not None]
+                if len(margins) >= 2:
+                    analysis_data["margin_trend"] = "expanding" if margins[0] > margins[-1] else "contracting"
+                    analysis_data["pricing_power_signal"] = "strong" if margins[0] >= 30 and margins[0] > margins[-1] else "weak"
+                streak = trend_data.get("dividend_growth_streak", 0)
+                analysis_data["dividend_reliability"] = "high" if streak >= 5 else "moderate" if streak >= 2 else "low"
+                volatility = trend_data.get("revenue_consistency")
+                if volatility is not None:
+                    analysis_data["business_resilience"] = "high" if volatility < 10 else "moderate" if volatility < 25 else "low"
+
             analysis = StockAnalysis(
                 stock_ticker=ticker,
                 tier="standard",

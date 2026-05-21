@@ -58,6 +58,36 @@ Guidelines:
 - The verdict should reflect a value investing perspective: focus on intrinsic value, margin of safety, and long-term fundamentals.
 - Respond ONLY with the JSON object, no markdown code fences or extra text."""
 
+PRESERVATION_SYSTEM_PROMPT = """You are a senior financial analyst producing structured investment research reports with a focus on INFLATION RESILIENCE and CAPITAL PRESERVATION.
+
+Analyze the provided SEC filing data, news, and preservation metrics to produce a comprehensive report that emphasizes how well this company protects investor capital during inflationary environments.
+
+You MUST respond with valid JSON matching this exact schema:
+
+{
+  "company_overview": "2-3 paragraph overview emphasizing business model durability and inflation exposure",
+  "competitive_position": "Analysis of competitive advantages with focus on pricing power sustainability",
+  "financial_health": "Assessment emphasizing margin stability, dividend reliability, and balance sheet resilience",
+  "growth_trajectory": "Evaluation of real (inflation-adjusted) growth potential and revenue consistency",
+  "key_risks": "Top 3-5 risks with emphasis on inflation sensitivity, margin compression, and purchasing power erosion",
+  "pricing_power_durability": "Assessment of the company's ability to pass cost increases to customers sustainably",
+  "dividend_sustainability_under_stress": "Analysis of dividend coverage, payout ratio trends, and resilience during economic stress",
+  "inflation_resilience_assessment": "Overall evaluation of how the business performs during high-inflation periods",
+  "competitive_moat_strength": "Assessment of durable competitive advantages that protect margins over decades",
+  "investment_opinion": {
+    "verdict": "buy | hold | avoid",
+    "confidence": "high | medium | low",
+    "reasoning": "2-3 sentence summary focusing on capital preservation thesis"
+  }
+}
+
+Guidelines:
+- Be specific and data-driven. Reference actual numbers from the filings when available.
+- Distinguish between facts (from filings) and interpretations (your analysis).
+- If filing data is limited or unavailable, note this and base analysis on available news and general knowledge.
+- The verdict should reflect a PRESERVATION investing perspective: focus on inflation resilience, pricing power, dividend sustainability, and capital protection.
+- Respond ONLY with the JSON object, no markdown code fences or extra text."""
+
 
 MAX_ARTICLE_PROMPT_CHARS = 5000
 
@@ -124,10 +154,12 @@ def _build_user_prompt(
     return "\n\n".join(parts)
 
 
-def _call_claude_sync(user_prompt: str, api_key: str | None = None) -> dict:
+def _call_claude_sync(user_prompt: str, api_key: str | None = None, mode: str = "value") -> dict:
     """Synchronous Claude API call. Run via asyncio.to_thread()."""
     key = api_key or settings.anthropic_api_key
     client = Anthropic(api_key=key)
+
+    prompt_text = PRESERVATION_SYSTEM_PROMPT if mode == "preservation" else SYSTEM_PROMPT
 
     response = client.messages.create(
         model="claude-sonnet-4-20250514",
@@ -135,7 +167,7 @@ def _call_claude_sync(user_prompt: str, api_key: str | None = None) -> dict:
         system=[
             {
                 "type": "text",
-                "text": SYSTEM_PROMPT,
+                "text": prompt_text,
                 "cache_control": {"type": "ephemeral"},
             }
         ],
@@ -211,7 +243,7 @@ async def run_research_for_ticker(
             # Step 4: Build prompt and call Claude
             await _update_task_progress(db, task_id, "analyzing")
             user_prompt = _build_user_prompt(ticker, filing_data, news_articles, full_articles or None)
-            report_content = await asyncio.to_thread(_call_claude_sync, user_prompt)
+            report_content = await asyncio.to_thread(_call_claude_sync, user_prompt, None, mode)
 
             # Step 5: Store report
             await _update_task_progress(db, task_id, "storing")
