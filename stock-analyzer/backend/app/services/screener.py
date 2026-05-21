@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.screening import ScreeningResult, ScreeningRun
 from app.models.stock import Stock
 from app.models.task import TaskStatus
-from app.services.scorer import CATEGORY_METRICS, compute_composite_score
+from app.services.scorer import CATEGORY_METRICS, compute_composite_score, compute_preservation_score
 
 logger = logging.getLogger(__name__)
 
@@ -248,6 +248,7 @@ async def run_screening(
     category_weights = prefs.get("category_weights")
     preferred_sectors = prefs.get("preferred_sectors", [])
     metric_overrides = prefs.get("metric_overrides")
+    preservation_enabled = prefs.get("preservation_enabled", False)
 
     thresholds = _merge_thresholds(filter_config, metric_overrides)
 
@@ -364,10 +365,13 @@ async def run_screening(
 
         stage = prior_stages.get(stock.ticker, "screened")
 
+        preservation = compute_preservation_score(metrics) if preservation_enabled else None
+
         screening_result = ScreeningResult(
             screening_run_id=run_id,
             stock_ticker=stock.ticker,
             composite_score=composite,
+            preservation_score=preservation,
             metric_snapshot=snapshot,
             conviction_data=conviction,
             summary=summary,

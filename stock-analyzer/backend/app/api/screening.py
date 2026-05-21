@@ -47,6 +47,7 @@ async def _load_preferences(db: AsyncSession) -> dict[str, Any]:
         "preferred_sectors": pref.preferred_sectors or [],
         "category_weights": pref.category_weights,
         "metric_overrides": pref.metric_overrides,
+        "preservation_enabled": bool(pref.preservation_enabled),
     }
 
 

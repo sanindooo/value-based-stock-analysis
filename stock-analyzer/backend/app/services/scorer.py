@@ -100,6 +100,20 @@ DEFAULT_CATEGORY_WEIGHTS: dict[str, int] = {
     "profitability": 25,
 }
 
+PRESERVATION_METRICS: dict[str, list[str]] = {
+    "pricing_power": ["gross_margin"],
+    "income_resilience": ["dividend_yield", "dividend_payout"],
+    "stability": ["beta"],
+    "capital_efficiency": ["roe", "roa"],
+}
+
+PRESERVATION_WEIGHTS: dict[str, int] = {
+    "pricing_power": 25,
+    "income_resilience": 25,
+    "stability": 25,
+    "capital_efficiency": 25,
+}
+
 
 def normalize_metric(metric: str, value: float) -> float:
     """Normalize a metric value to 0-1 based on its defined range.
@@ -186,3 +200,33 @@ def compute_composite_score(
         base_score = min(100.0, base_score + 10)
 
     return round(base_score, 1)
+
+
+def compute_preservation_score(metrics: dict[str, Any]) -> float:
+    """Compute the preservation score (0-100) for inflation resilience.
+
+    Uses fixed equal weights across 4 categories: pricing_power,
+    income_resilience, stability, capital_efficiency. No sector bonus.
+    """
+    weighted_sum = 0.0
+    total_weight = 0
+
+    for category, weight in PRESERVATION_WEIGHTS.items():
+        metric_names = PRESERVATION_METRICS.get(category, [])
+        scores: list[float] = []
+
+        for metric_name in metric_names:
+            value = metrics.get(metric_name)
+            if value is None:
+                continue
+            scores.append(normalize_metric(metric_name, value))
+
+        if scores:
+            cat_score = sum(scores) / len(scores)
+            weighted_sum += cat_score * weight
+            total_weight += weight
+
+    if total_weight == 0:
+        return 0.0
+
+    return round((weighted_sum / total_weight) * 100, 1)

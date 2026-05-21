@@ -10,7 +10,9 @@ import pytest
 from app.services.scorer import (
     CATEGORY_METRICS,
     DEFAULT_CATEGORY_WEIGHTS,
+    PRESERVATION_METRICS,
     compute_composite_score,
+    compute_preservation_score,
     normalize_metric,
     score_category,
 )
@@ -247,3 +249,85 @@ class TestCompositeScore:
                     f"Metric '{metric}' in category '{category}' "
                     f"has no normalization range defined"
                 )
+
+
+# ---------------------------------------------------------------------------
+# compute_preservation_score
+# ---------------------------------------------------------------------------
+
+class TestPreservationScore:
+    def test_all_preservation_metrics_are_known(self):
+        from app.services.scorer import METRIC_RANGES
+        for category, metrics in PRESERVATION_METRICS.items():
+            for metric in metrics:
+                assert metric in METRIC_RANGES, (
+                    f"Metric '{metric}' in preservation category '{category}' "
+                    f"has no normalization range defined"
+                )
+
+    def test_returns_score_between_0_and_100(self):
+        metrics = {
+            "gross_margin": 40,
+            "dividend_yield": 3,
+            "dividend_payout": 30,
+            "beta": 0.8,
+            "roe": 20,
+            "roa": 10,
+        }
+        score = compute_preservation_score(metrics)
+        assert 0 <= score <= 100
+
+    def test_high_preservation_metrics_score_high(self):
+        metrics = {
+            "gross_margin": 55,
+            "dividend_yield": 5,
+            "dividend_payout": 20,
+            "beta": 0.3,
+            "roe": 30,
+            "roa": 15,
+        }
+        score = compute_preservation_score(metrics)
+        assert score > 60
+
+    def test_low_preservation_metrics_score_low(self):
+        metrics = {
+            "gross_margin": 5,
+            "dividend_yield": 0.5,
+            "dividend_payout": 75,
+            "beta": 1.9,
+            "roe": 2,
+            "roa": 1,
+        }
+        score = compute_preservation_score(metrics)
+        assert score < 40
+
+    def test_empty_metrics_returns_zero(self):
+        score = compute_preservation_score({})
+        assert score == 0.0
+
+    def test_missing_one_category_still_scores(self):
+        metrics = {
+            "gross_margin": 40,
+            "roe": 20,
+            "roa": 10,
+        }
+        score = compute_preservation_score(metrics)
+        assert score > 0
+
+    def test_missing_all_metrics_returns_zero(self):
+        metrics = {"pe_ratio": 10, "peg_ratio": 1.0}
+        score = compute_preservation_score(metrics)
+        assert score == 0.0
+
+    def test_income_resilience_averages_opposite_polarity(self):
+        high_yield_low_payout = {
+            "dividend_yield": 6,
+            "dividend_payout": 20,
+        }
+        low_yield_high_payout = {
+            "dividend_yield": 1,
+            "dividend_payout": 70,
+        }
+        score_good = compute_preservation_score(high_yield_low_payout)
+        score_bad = compute_preservation_score(low_yield_high_payout)
+        assert score_good > score_bad
