@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, update
 
+from app.api.analysis import router as analysis_router
 from app.api.data import router as data_router
 from app.api.preferences import router as preferences_router
 from app.api.research import router as research_router
@@ -39,6 +40,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(analysis_router, prefix="/api/analysis", tags=["analysis"])
 app.include_router(data_router, prefix="/api/data", tags=["data"])
 app.include_router(preferences_router, prefix="/api/preferences", tags=["preferences"])
 app.include_router(research_router, prefix="/api/research", tags=["research"])
