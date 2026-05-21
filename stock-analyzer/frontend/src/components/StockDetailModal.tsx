@@ -8,6 +8,7 @@ export interface StockDetail {
   id: number
   stock_ticker: string
   composite_score: number
+  preservation_score?: number | null
   metric_snapshot: Record<string, unknown>
   conviction_data: Record<string, number>
   summary: string | null

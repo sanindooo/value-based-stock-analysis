@@ -17,6 +17,7 @@ interface Preferences {
   hold_duration: string
   category_weights: Record<string, number>
   metric_overrides: Record<string, MetricThreshold>
+  preservation_enabled: boolean
 }
 
 const RISK_OPTIONS = [
@@ -128,6 +129,43 @@ export default function SettingsPage() {
               setPrefs({ ...prefs, preferred_sectors: sectors })
             }
           />
+        </section>
+
+        {/* Preservation Mode */}
+        <section className="rounded-xl border border-gray-200 bg-white p-6">
+          <h2 className="mb-1 text-base font-semibold text-gray-900">
+            Preservation Mode
+          </h2>
+          <p className="mb-4 text-sm text-gray-500">
+            Evaluate stocks for inflation resilience — pricing power, dividend
+            sustainability, stability, and capital efficiency.
+          </p>
+          <div className="flex gap-3">
+            {[
+              { value: true, label: "Enabled" },
+              { value: false, label: "Disabled" },
+            ].map((opt) => (
+              <label
+                key={String(opt.value)}
+                className={`flex flex-1 cursor-pointer items-center justify-center rounded-lg border px-4 py-3 text-sm font-medium transition-colors ${
+                  prefs.preservation_enabled === opt.value
+                    ? "border-blue-600 bg-blue-50 text-blue-700"
+                    : "border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="preservation_enabled"
+                  checked={prefs.preservation_enabled === opt.value}
+                  onChange={() =>
+                    setPrefs({ ...prefs, preservation_enabled: opt.value })
+                  }
+                  className="sr-only"
+                />
+                {opt.label}
+              </label>
+            ))}
+          </div>
         </section>
 
         {/* Risk Tolerance */}

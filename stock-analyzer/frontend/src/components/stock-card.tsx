@@ -7,6 +7,7 @@ export interface StockResult {
   screening_run_id: number
   stock_ticker: string
   composite_score: number
+  preservation_score: number | null
   metric_snapshot: Record<string, number | null>
   conviction_data: Record<string, number>
   summary: string | null
@@ -18,6 +19,7 @@ interface StockCardProps {
   selected: boolean
   onToggle: (id: number) => void
   action?: React.ReactNode
+  showPreservation?: boolean
 }
 
 function scoreColor(score: number): string {
@@ -31,7 +33,7 @@ function sectorBadge(sector: string | undefined): string {
   return "bg-indigo-50 text-indigo-700"
 }
 
-export default function StockCard({ stock, selected, onToggle, action }: StockCardProps) {
+export default function StockCard({ stock, selected, onToggle, action, showPreservation }: StockCardProps) {
   const metrics = stock.metric_snapshot || {}
   const conviction = stock.conviction_data || {}
   const sector = metrics.sector as unknown as string | undefined
@@ -118,12 +120,24 @@ export default function StockCard({ stock, selected, onToggle, action }: StockCa
           </div>
         </div>
 
-        {/* Composite score */}
-        <div
-          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border text-base font-bold tabular-nums ${scoreColor(stock.composite_score)}`}
-          aria-label={`Composite score: ${stock.composite_score.toFixed(0)}`}
-        >
-          {stock.composite_score.toFixed(0)}
+        {/* Scores */}
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <div
+            className={`flex h-12 w-12 items-center justify-center rounded-lg border text-base font-bold tabular-nums ${scoreColor(stock.composite_score)}`}
+            aria-label={`Composite score: ${stock.composite_score.toFixed(0)}`}
+          >
+            {stock.composite_score.toFixed(0)}
+          </div>
+          {showPreservation && stock.preservation_score != null && (
+            <div
+              className={`flex h-8 w-8 items-center justify-center rounded-md border text-xs font-bold tabular-nums ${scoreColor(stock.preservation_score)}`}
+              aria-label={`Preservation score: ${stock.preservation_score.toFixed(0)}`}
+              title="Preservation score"
+            >
+              <span className="text-[8px] font-medium leading-none opacity-60">P</span>
+              {stock.preservation_score.toFixed(0)}
+            </div>
+          )}
         </div>
       </div>
 

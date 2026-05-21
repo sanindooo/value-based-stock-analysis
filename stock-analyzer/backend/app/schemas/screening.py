@@ -12,6 +12,7 @@ class ScreeningRunRequest(BaseModel):
     filter_config: dict[str, Any] | None = None
     max_examined: int | None = None
     max_matches: int | None = None
+    preservation_enabled: bool | None = None
 
 
 class ScreeningRunResponse(BaseModel):

@@ -6,6 +6,7 @@ export interface StockListItem {
   id: number
   stock_ticker: string
   composite_score: number
+  preservation_score: number | null
   metric_snapshot: Record<string, unknown>
   conviction_data: Record<string, number>
   summary: string | null
@@ -21,6 +22,7 @@ interface StockListRowProps {
   onResearch?: () => void
   onReject?: () => void
   onUnreject?: () => void
+  showPreservation?: boolean
 }
 
 function scoreColor(score: number): string {
@@ -44,7 +46,7 @@ function formatMetric(val: unknown, suffix?: string): string {
   return `${val.toFixed(1)}${suffix || ""}`
 }
 
-export default function StockListRow({ stock, onClick, selected, onToggle, researchStatus, onResearch, onReject, onUnreject }: StockListRowProps) {
+export default function StockListRow({ stock, onClick, selected, onToggle, researchStatus, onResearch, onReject, onUnreject, showPreservation }: StockListRowProps) {
   const metrics = stock.metric_snapshot || {}
   const companyName = metrics.company_name as string | undefined
   const sector = metrics.sector as string | undefined
@@ -203,6 +205,14 @@ export default function StockListRow({ stock, onClick, selected, onToggle, resea
       >
         {stock.composite_score.toFixed(0)}
       </div>
+      {showPreservation && stock.preservation_score != null && (
+        <div
+          className={`flex h-8 w-10 shrink-0 items-center justify-center rounded-md text-sm font-bold tabular-nums ${scoreColor(stock.preservation_score)}`}
+          title="Preservation score"
+        >
+          {stock.preservation_score.toFixed(0)}
+        </div>
+      )}
       <svg className="h-4 w-4 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
       </svg>

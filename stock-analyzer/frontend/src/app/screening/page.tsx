@@ -35,6 +35,8 @@ export default function ScreeningPage() {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [maxExamined, setMaxExamined] = useState("")
   const [maxMatches, setMaxMatches] = useState("")
+  const [preservationEnabled, setPreservationEnabled] = useState(false)
+  const [prefsLoaded, setPrefsLoaded] = useState(false)
 
   const { registerTask, activeScreeningTask, lastCompletedTask } = useTaskContext()
 
@@ -53,6 +55,17 @@ export default function ScreeningPage() {
     loadRuns()
   }, [loadRuns])
 
+  useEffect(() => {
+    apiFetch<{ preservation_enabled: boolean }>("/preferences")
+      .then((data) => {
+        setPreservationEnabled(data.preservation_enabled)
+        setPrefsLoaded(true)
+      })
+      .catch(() => {
+        setPrefsLoaded(true)
+      })
+  }, [])
+
   // Reload runs when a task completes
   useEffect(() => {
     if (lastCompletedTask) {
@@ -69,7 +82,7 @@ export default function ScreeningPage() {
   async function startRun() {
     setStarting(true)
     try {
-      const body: Record<string, unknown> = { filter_config: null }
+      const body: Record<string, unknown> = { filter_config: null, preservation_enabled: preservationEnabled }
       const examined = parseInt(maxExamined)
       const matches = parseInt(maxMatches)
       if (examined > 0) body.max_examined = examined
@@ -187,7 +200,7 @@ export default function ScreeningPage() {
           Advanced options
         </button>
         {showAdvanced && (
-          <div className="mt-3 flex flex-col gap-4 sm:flex-row">
+          <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-end">
             <div>
               <label className="text-xs text-gray-500">Max stocks to examine</label>
               <input
@@ -210,6 +223,16 @@ export default function ScreeningPage() {
                 className="mt-1 block w-32 rounded-md border border-gray-200 px-3 py-1.5 text-sm"
               />
             </div>
+            <label className="flex items-center gap-2 pb-1 text-sm text-gray-600">
+              <input
+                type="checkbox"
+                checked={preservationEnabled}
+                onChange={(e) => setPreservationEnabled(e.target.checked)}
+                disabled={!prefsLoaded}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              Preservation scores
+            </label>
           </div>
         )}
       </div>

@@ -56,6 +56,7 @@ async def _run_screening_task(
     filter_config: dict[str, Any] | None,
     max_examined: int | None = None,
     max_matches: int | None = None,
+    preservation_enabled: bool | None = None,
 ) -> None:
     """Background task wrapper — fetches market data, then screens."""
     failed = False
@@ -90,6 +91,8 @@ async def _run_screening_task(
             await fetch_and_cache_yahoo_batch(db, tickers, on_progress=_on_fetch_progress)
 
             preferences = await _load_preferences(db)
+            if preservation_enabled is not None:
+                preferences["preservation_enabled"] = preservation_enabled
             await run_screening(
                 db,
                 filter_config=filter_config,
@@ -165,6 +168,7 @@ async def start_screening_run(
         filter_config=body.filter_config,
         max_examined=body.max_examined,
         max_matches=body.max_matches,
+        preservation_enabled=body.preservation_enabled,
     )
 
     # run_id is 0 until the background task creates it — the client should
@@ -175,7 +179,7 @@ async def start_screening_run(
 @router.get("/{run_id}/results", response_model=ScreeningResultsPage)
 async def get_screening_results(
     run_id: int,
-    sort_by: str = Query("composite_score", pattern="^(composite_score|stock_ticker)$"),
+    sort_by: str = Query("composite_score", pattern="^(composite_score|preservation_score|stock_ticker)$"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),

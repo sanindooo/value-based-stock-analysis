@@ -39,6 +39,7 @@ interface RunDetails {
 
 const SORT_OPTIONS = [
 	{ value: "composite_score", label: "Composite Score" },
+	{ value: "preservation_score", label: "Preservation Score" },
 	{ value: "stock_ticker", label: "Ticker" },
 ];
 
@@ -102,6 +103,7 @@ export default function ScreeningResultsPage() {
 	const [selected, setSelected] = useState<Set<number>>(new Set());
 	const [tickerSearch, setTickerSearch] = useState("");
 	const [showRejected, setShowRejected] = useState(false);
+	const [showPreservation, setShowPreservation] = useState(true);
 	const [showAdvanced, setShowAdvanced] = useState(false);
 	const [researchStatus, setResearchStatus] = useState<
 		Record<number, "loading" | "started" | "failed">
@@ -285,6 +287,8 @@ export default function ScreeningResultsPage() {
 			if (bVal === null) return -1;
 			return order === "asc" ? aVal - bVal : bVal - aVal;
 		});
+
+	const hasPreservationScores = results.some((r) => r.preservation_score != null);
 
 	const stageCounts = {
 		screened: results.filter((r) => r.stage === "screened").length,
@@ -606,6 +610,17 @@ export default function ScreeningResultsPage() {
 					{/* View toggle / Select all / Show rejected */}
 					<div className="ml-auto flex items-center gap-4">
 						<ViewToggle storageKey="screening-results-view" onChange={setView} />
+						{hasPreservationScores && (
+							<label className="flex items-center gap-2 text-sm text-gray-600">
+								<input
+									type="checkbox"
+									checked={showPreservation}
+									onChange={() => setShowPreservation((v) => !v)}
+									className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+								/>
+								Preservation
+							</label>
+						)}
 						<label className="flex items-center gap-2 text-sm text-gray-600">
 							<input
 								type="checkbox"
@@ -722,6 +737,7 @@ export default function ScreeningResultsPage() {
 							onResearch={() => triggerResearch([stock.id])}
 							onReject={() => updateStage(stock.id, "rejected")}
 							onUnreject={() => unreject(stock.id)}
+							showPreservation={showPreservation}
 						/>
 					))}
 				</div>
@@ -733,6 +749,7 @@ export default function ScreeningResultsPage() {
 							stock={stock}
 							selected={selected.has(stock.id)}
 							onToggle={toggleSelection}
+							showPreservation={showPreservation}
 							action={
 								<>
 									{stock.stage === "rejected" && showRejected && (
