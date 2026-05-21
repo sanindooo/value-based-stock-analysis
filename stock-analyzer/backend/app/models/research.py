@@ -14,6 +14,7 @@ class ResearchReport(Base):
     stock_ticker: Mapped[str] = mapped_column(String(10))
     report_content: Mapped[dict] = mapped_column(JSON, default=dict)
     sources: Mapped[dict] = mapped_column(JSON, default=dict)
+    mode: Mapped[str] = mapped_column(String(20), server_default="value", default="value")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

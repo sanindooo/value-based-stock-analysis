@@ -25,6 +25,7 @@ def _to_response(pref: PortfolioPreference) -> PreferencesResponse:
         hold_duration=pref.hold_duration or "3-5y",
         category_weights=pref.category_weights or DEFAULT_CATEGORY_WEIGHTS,
         metric_overrides=overrides,
+        preservation_enabled=bool(pref.preservation_enabled),
     )
 
 
@@ -36,6 +37,7 @@ def _default_response() -> PreferencesResponse:
         hold_duration="3-5y",
         category_weights=DEFAULT_CATEGORY_WEIGHTS,
         metric_overrides=DEFAULT_METRIC_THRESHOLDS,
+        preservation_enabled=False,
     )
 
 

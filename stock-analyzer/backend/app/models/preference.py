@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, String
+from sqlalchemy import Boolean, Integer, String
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,3 +22,4 @@ class PortfolioPreference(Base):
         },
     )
     metric_overrides: Mapped[dict] = mapped_column(JSON, default=dict)
+    preservation_enabled: Mapped[bool] = mapped_column(Boolean, server_default="false", default=False)

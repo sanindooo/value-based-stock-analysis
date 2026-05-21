@@ -24,6 +24,7 @@ class ScreeningResultOut(BaseModel):
     screening_run_id: int
     stock_ticker: str
     composite_score: float
+    preservation_score: float | None = None
     metric_snapshot: dict[str, Any]
     conviction_data: dict[str, Any]
     summary: str | None = None

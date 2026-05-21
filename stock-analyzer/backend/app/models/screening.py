@@ -32,5 +32,6 @@ class ScreeningResult(Base):
     composite_score: Mapped[float] = mapped_column(Float, default=0.0)
     metric_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
     conviction_data: Mapped[dict] = mapped_column(JSON, default=dict)
+    preservation_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     summary: Mapped[str | None] = mapped_column(String(1000))
     stage: Mapped[str] = mapped_column(String(20), default="screened")

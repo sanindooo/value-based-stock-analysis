@@ -26,6 +26,7 @@ class ResearchReportOut(BaseModel):
     stock_ticker: str
     report_content: dict[str, Any]
     sources: dict[str, Any]
+    mode: str = "value"
     created_at: datetime
 
     model_config = {"from_attributes": True}

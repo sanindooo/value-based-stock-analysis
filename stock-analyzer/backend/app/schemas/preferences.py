@@ -40,6 +40,7 @@ class PreferencesResponse(BaseModel):
     hold_duration: str
     category_weights: dict[str, int]
     metric_overrides: dict[str, dict[str, float | None]]
+    preservation_enabled: bool
 
 
 class PreferencesUpdate(BaseModel):
@@ -48,6 +49,7 @@ class PreferencesUpdate(BaseModel):
     hold_duration: str | None = None
     category_weights: dict[str, int] | None = None
     metric_overrides: dict[str, dict[str, float | None]] | None = None
+    preservation_enabled: bool | None = None
 
     @field_validator("risk_tolerance")
     @classmethod
